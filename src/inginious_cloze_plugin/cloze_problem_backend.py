@@ -5,41 +5,51 @@ from inginious.common.tasks_problems import Problem
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class ClozeProblem(Problem):
+    """
+    Backend grading logic (used by the grader).
+    Displayable (frontend) class will reuse the same parsing helpers.
+    """
+
     @classmethod
     def get_type(cls):
         return "cloze"
 
     @classmethod
     def input_type(cls):
-        # backend expects a dict: {slot: answer_string}
+        # The grader receives a dict: {"1": "...", "2": "..."}
         return "dict"
 
     @classmethod
     def get_text_fields(cls):
-        # allow authoring/translation
+        # fields that can be translated/edited in task editor
         return ["name", "text"]
 
     def _solutions(self):
+        """Parse expected answers out of the cloze text."""
         text = (self._data or {}).get("text", "") or ""
         sol = {}
         for slot, kind, rhs in _TOKEN_RE.findall(text):
+            rhs = rhs.strip()
             if kind == "SHORTANSWER":
                 sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
             else:
+                # NUMERICAL supports "100" or "100±0.5"
                 tol = 0.0
-                val = rhs.strip()
-                if "±" in val:
-                    base, t = val.split("±", 1)
-                    val, tol = base.strip(), float(t.strip())
-                sol[slot] = ("NUMERICAL", (float(val), tol))
+                if "±" in rhs:
+                    base, t = rhs.split("±", 1)
+                    rhs = base.strip()
+                    tol = float(t.strip())
+                sol[slot] = ("NUMERICAL", (float(rhs), tol))
         return sol
 
     def input_is_consistent(self, value):
-        return (
-            isinstance(value, dict)
-            and all(isinstance(k, str) for k in value.keys())
-            and all(isinstance(v, str) for v in value.values())
-        )
+        # value must be dict[str,str]
+        if not isinstance(value, dict):
+            return False
+        for k, v in value.items():
+            if not isinstance(k, str) or not isinstance(v, str):
+                return False
+        return True
 
     def check_answer(self, value, seed):
         sols = self._solutions()
