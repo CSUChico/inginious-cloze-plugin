@@ -5,27 +5,20 @@ from inginious.common.tasks_problems import Problem
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class ClozeProblem(Problem):
-    """
-    Backend grading logic (used by the grader).
-    Displayable (frontend) class will reuse the same parsing helpers.
-    """
-
     @classmethod
     def get_type(cls):
         return "cloze"
 
     @classmethod
     def input_type(cls):
-        # The grader receives a dict: {"1": "...", "2": "..."}
+        # Grader receives: {"1": "...", "2": "..."}
         return "dict"
 
     @classmethod
     def get_text_fields(cls):
-        # fields that can be translated/edited in task editor
         return ["name", "text"]
 
     def _solutions(self):
-        """Parse expected answers out of the cloze text."""
         text = (self._data or {}).get("text", "") or ""
         sol = {}
         for slot, kind, rhs in _TOKEN_RE.findall(text):
@@ -33,7 +26,6 @@ class ClozeProblem(Problem):
             if kind == "SHORTANSWER":
                 sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
             else:
-                # NUMERICAL supports "100" or "100±0.5"
                 tol = 0.0
                 if "±" in rhs:
                     base, t = rhs.split("±", 1)
@@ -43,13 +35,9 @@ class ClozeProblem(Problem):
         return sol
 
     def input_is_consistent(self, value):
-        # value must be dict[str,str]
         if not isinstance(value, dict):
             return False
-        for k, v in value.items():
-            if not isinstance(k, str) or not isinstance(v, str):
-                return False
-        return True
+        return all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
 
     def check_answer(self, value, seed):
         sols = self._solutions()
