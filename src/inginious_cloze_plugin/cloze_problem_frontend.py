@@ -1,22 +1,71 @@
-# src/inginious_cloze_plugin/cloze_problem_frontend.py
+# -*- coding: utf-8 -*-
 import html
 import re
 
 from inginious.frontend.task_problems import DisplayableProblem
 from .cloze_problem_backend import ClozeProblem
 
-# {slot:TYPE:=ANSWER}
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
+def _iter_expected_slots(text: str):
+    for m in _TOKEN_RE.finditer(text or ""):
+        yield m.group(1)  # slot id string like "1", "2", ...
 
-class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
+def _extract_slots_from_request_mapping(pid: str, mapping):
     """
-    Frontend (rendering + client-side packing).
+    Extract slot answers from a dict-like mapping that may contain:
+      - keys like "p1[1]"  (from <input name="p1[1]">)
+      - keys like "p1__1"
+      - key "p1" containing nested dict {"1": "...", "2": "..."}
+    Returns a dict {slot: str}.
+    """
+    if mapping is None:
+        return {}
 
-    We render multiple <input> fields but submit ONE hidden field named "{problem_id}"
-    that contains JSON like:
-      {"1":"H2O","2":"100"}
-    This matches backend input_type() == "string".
+    # Case 1: already normalized: {"p1": {"1": "..."}}
+    try:
+        nested = mapping.get(pid)
+        if isinstance(nested, dict):
+            # ensure values are strings
+            out = {}
+            for k, v in nested.items():
+                out[str(k)] = "" if v is None else str(v)
+            return out
+    except Exception:
+        pass
+
+    out = {}
+
+    # Case 2: direct bracket keys "p1[1]"
+    try:
+        # mapping might be werkzeug MultiDict: supports .items()
+        for k, v in getattr(mapping, "items", lambda: [])():
+            if not isinstance(k, str):
+                continue
+
+            # p1[1]
+            if k.startswith(pid + "[") and k.endswith("]"):
+                slot = k[len(pid) + 1 : -1]
+                out[str(slot)] = "" if v is None else str(v)
+                continue
+
+            # p1__1
+            if k.startswith(pid + "__"):
+                slot = k[len(pid) + 2 :]
+                out[str(slot)] = "" if v is None else str(v)
+                continue
+    except Exception:
+        pass
+
+    return out
+
+class DisplayableClozeProblem(DisplayableProblem, ClozeProblem):
+    """
+    Frontend problem type.
+
+    Important:
+    - Must NOT be abstract: implement required methods with compatible signatures.
+    - Must ensure self._data exists (Problem sets it).
     """
 
     @classmethod
@@ -28,99 +77,94 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
+        # Explicitly init BOTH bases to ensure _data and DisplayableProblem state exist.
+        ClozeProblem.__init__(self, problemid, problem_content, translations, task_fs)
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
-        # ensure we keep YAML data available for show_input
-        self._data = problem_content
 
-    # --- required by DisplayableProblem/abstract base
+    # ---- Required by DisplayableProblem / frontend flow ----
+
     def get_text_fields(self):
+        # match backend: fields that are "textual"/translatable
         return ["name", "text"]
 
     def input_type(self):
-        # IMPORTANT: must be a supported core type. We'll post JSON as a string.
-        return "string"
+        # frontend submits multiple blanks; treat as dict
+        return "dict"
 
-    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None, *args, **kwargs):
         """
-        Called by the webapp before it accepts submission.
-        We must ensure the field exists and is non-empty.
+        Called by the webapp with (task_input, allowed_exts, max_size).
+
+        task_input is often a dict / MultiDict of *raw* POST fields at this stage.
+        We enforce: every cloze slot found in the text has a non-empty answer.
         """
         pid = self.get_id()
-        raw = task_input.get_problem_input(pid)
-        return bool(raw and str(raw).strip())
+        text = (self._data or {}).get("text", "") or ""
+        expected = list(_iter_expected_slots(text))
 
-    def check_answer(self, task_input, language):
+        # If there are no slots, it's trivially consistent
+        if not expected:
+            return True
+
+        slots = _extract_slots_from_request_mapping(pid, task_input)
+
+        # All expected slots must exist and be non-empty
+        for slot in expected:
+            if (slots.get(slot) or "").strip() == "":
+                return False
+
+        return True
+
+    def check_answer(self, task_input, language=None, seed=None, *args, **kwargs):
         """
-        Optional "check" path; we don't do frontend checking.
-        Return (ok, message). Keep permissive.
+        Some INGInious flows call a frontend "check" method.
+        We'll just say "ok" and let real grading happen in the backend container.
         """
         return True, ""
 
-    # --- rendering
     def show_input(self, template_helper, language, seed):
+        """
+        Render the statement, replacing tokens with HTML <input> elements.
+        Field names use bracket notation: p1[1], p1[2], ...
+        """
         pid = self.get_id()
-        text = self._data.get("text", "") or ""
-        title = html.escape(self._data.get("name", "Question") or "Question")
+        text = (self._data or {}).get("text", "") or ""
 
         parts = []
         last = 0
-
-        # Build inline inputs; we store answers into a single hidden JSON field (name=pid)
         for m in _TOKEN_RE.finditer(text):
             parts.append(html.escape(text[last:m.start()]))
 
             slot = m.group(1)
-            # visible input - NOT named for submission
+            name = f"{pid}[{slot}]"
+
             parts.append(
-                f'<input type="text" data-slot="{html.escape(slot)}" '
-                f'class="form-control cloze-input" '
-                f'style="display:inline-block; width:10rem; margin:0 0.25rem;" />'
+                f'<input type="text" name="{html.escape(name)}" '
+                f'class="form-control" '
+                f'style="display:inline-block; width:18rem; max-width:100%; margin:0 0.25rem; vertical-align:middle;" />'
             )
             last = m.end()
 
         parts.append(html.escape(text[last:]))
 
-        # hidden field that INGInious will read as the single problem answer
-        # name MUST be pid
-        return f"""
-        <div class="panel panel-default">
-          <div class="panel-heading">{title}</div>
-          <div class="panel-body" style="line-height:2.2;">
-            {''.join(parts)}
-            <input type="hidden" name="{html.escape(pid)}" id="{html.escape(pid)}" />
-          </div>
-        </div>
+        label = html.escape((self._data or {}).get("name", "Question") or "Question")
 
-        <script>
-          (function(){{
-            // Scope this script to the block that contains it
-            const root = document.currentScript.closest('.panel');
-            if(!root) return;
+        return (
+            f'<div class="panel panel-default">'
+            f'  <div class="panel-heading">{label}</div>'
+            f'  <div class="panel-body" style="line-height:2.2;">'
+            f'    {"".join(parts)}'
+            f'  </div>'
+            f'</div>'
+        )
 
-            const hidden = root.querySelector('input[name="{pid}"]');
-            const inputs = root.querySelectorAll('.cloze-input');
-
-            function update(){{
-              const data = {{}};
-              inputs.forEach(i => {{
-                data[i.dataset.slot] = i.value || "";
-              }});
-              hidden.value = JSON.stringify(data);
-            }}
-
-            inputs.forEach(i => i.addEventListener('input', update));
-            update();
-          }})();
-        </script>
-        """
-
-    # --- optional editor support (task editor)
+    # Optional editor support
     @classmethod
     def show_editbox(cls, template_helper, key, language):
-        if key == "name":
-            return '<input name="name" class="form-control" type="text" />'
         if key == "text":
             return '<textarea name="text" class="form-control" rows="6"></textarea>'
+        if key == "name":
+            return '<input type="text" name="name" class="form-control" />'
         return ""
 
     @classmethod
