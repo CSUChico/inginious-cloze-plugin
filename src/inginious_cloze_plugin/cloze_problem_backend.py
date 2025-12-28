@@ -1,62 +1,102 @@
 # src/inginious_cloze_plugin/cloze_problem_backend.py
 import re
+import json
+
 from inginious.common.tasks_problems import Problem
 
+# {slot:TYPE:=ANSWER}
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
+
 class ClozeProblem(Problem):
+    """
+    Backend/grading side.
+
+    Important: INGInious expects the submission value to match input_type().
+    We use input_type() == "string", but that string is JSON encoding of a dict:
+        {"1": "H2O", "2": "100"}
+    """
+
     @classmethod
     def get_type(cls):
         return "cloze"
 
     @classmethod
     def input_type(cls):
-        # we want TaskInput to deliver a dict {slot: str}
-        return "dict"
+        # Must be a supported core type. We'll encode dict as JSON string.
+        return "string"
 
     @classmethod
     def get_text_fields(cls):
-        return ["text", "name"]
+        # Fields that can be translated/edited
+        return ["name", "text"]
 
     def _solutions(self):
-        text = self._data.get("text", "")
+        """
+        Parse expected answers from the stem once.
+        SHORTANSWER: multiple variants allowed separated by |
+        NUMERICAL: allows "100" or "100±0.5"
+        """
+        text = self._data.get("text", "") or ""
         sol = {}
+
         for slot, kind, rhs in _TOKEN_RE.findall(text):
             rhs = rhs.strip()
             if kind == "SHORTANSWER":
-                sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|")])
+                sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
             else:
+                # NUMERICAL
                 tol = 0.0
-                val = rhs
-                if "±" in val:
-                    base, t = val.split("±", 1)
-                    val, tol = base.strip(), float(t.strip())
-                sol[slot] = ("NUMERICAL", (float(val), tol))
+                val_str = rhs
+                if "±" in rhs:
+                    base, t = rhs.split("±", 1)
+                    val_str = base.strip()
+                    tol = float(t.strip())
+                sol[slot] = ("NUMERICAL", (float(val_str), tol))
+
         return sol
 
-    # IMPORTANT: must accept extra args from frontend validation path
-    def input_is_consistent(self, value, *args, **kwargs):
-        return (
-            isinstance(value, dict) and
-            all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
-        )
+    def input_is_consistent(self, value):
+        """
+        value should be a JSON string representing a dict slot->answer.
+        """
+        if not isinstance(value, str):
+            return False
+        value = value.strip()
+        if not value:
+            return False
+        try:
+            obj = json.loads(value)
+        except Exception:
+            return False
+        if not isinstance(obj, dict):
+            return False
+        # keys and values should be strings
+        return all(isinstance(k, str) and isinstance(v, str) for k, v in obj.items())
 
-    # IMPORTANT: MCQ agent calls check_answer(task_input, language)
-    # (it uses "language" where you used "seed")
-    def check_answer(self, value, language):
+    def check_answer(self, value, seed):
+        """
+        Return format for Problem.check_answer in INGInious:
+          (success: bool, feedback: str, problems_feedback: list, grade: float/int, result_data: dict)
+
+        Note: Some INGInious versions treat 'grade' differently; returning a float 0..1 is typical.
+        """
         sols = self._solutions()
 
-        if not isinstance(value, dict):
-            # valid=False => counts as a formatting error
-            return (False, "Malformed submission.", [], 1, {})
+        try:
+            answers = json.loads(value) if isinstance(value, str) else {}
+        except Exception:
+            return (False, "Malformed submission.", [], 0.0, {"score": 0.0})
+
+        if not isinstance(answers, dict):
+            return (False, "Malformed submission.", [], 0.0, {"score": 0.0})
 
         correct = 0
-        total = max(len(sols), 1)
-        sub_msgs = []
-        state = {}
+        total = len(sols)
+        per_slot = {}
 
         for slot, (kind, rhs) in sols.items():
-            ans = (value.get(slot) or "").strip()
+            ans = (answers.get(slot) or "").strip()
             ok = False
 
             if kind == "SHORTANSWER":
@@ -69,14 +109,11 @@ class ClozeProblem(Problem):
                 except Exception:
                     ok = False
 
-            state[slot] = {"answer": ans, "ok": ok}
-            sub_msgs.append(f"{slot}: {'✓' if ok else '✗'}")
+            per_slot[slot] = {"answer": ans, "correct": ok}
             correct += 1 if ok else 0
 
-        score = correct / total
+        score = (correct / total) if total > 0 else 1.0
+        msg = f"{correct}/{total} correct" if total > 0 else "No blanks found."
 
-        # For MCQAgent: error_count should be 0 for well-formed submissions
-        valid = True
-        main_msg = f"Score: {correct}/{total} ({score:.0%})"
-        error_count = 0
-        return (valid, main_msg, sub_msgs, error_count, state)
+        # success=True means "grading completed", not "full marks"
+        return (True, msg, [], score, {"score": score, "details": per_slot})
