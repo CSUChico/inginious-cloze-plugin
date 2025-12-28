@@ -43,6 +43,28 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def get_type_name(cls, language):
         return "Cloze"
 
+    @classmethod
+    def input_type(cls):
+        """
+        Returns the type of the problem (used in the YAML configuration).
+        """
+        return "cloze"
+
+    def show_editbox(self):
+        """
+        Returns the HTML for the visual editor. 
+        Returning an empty string disables the visual editor for this problem type
+        but allows the system to load without crashing.
+        """
+        return ""
+
+    @classmethod
+    def show_editbox_templates(cls):
+        """
+        Returns any JavaScript templates needed for the editor.
+        """
+        return ""
+
     def _render_prompt_with_inputs(self, text, html_name_prefix):
         """
         Replace tokens like {1:SHORTANSWER:=H2O} with <input ...>.
