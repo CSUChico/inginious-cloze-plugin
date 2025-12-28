@@ -1,8 +1,27 @@
 # -*- coding: utf-8 -*-
+"""
+Backend (grading-side) Cloze problem for INGInious.
+
+Key design for INGInious 0.9.x:
+- The frontend must submit ONE field per problem id, otherwise the platform's
+  consistency checks fail for custom problem types.
+- Therefore we submit a JSON string in the single field, and decode it here.
+
+Token syntax supported in the stem text:
+  {1:SHORTANSWER:=H2O|h2o}
+  {2:NUMERICAL:=100±0.5}
+  {3:NUMERICAL:=42}
+
+SHORTANSWER: case-insensitive exact match against any variant split by '|'
+NUMERICAL: float compare with optional tolerance '±'
+"""
+
+import json
 import re
 from inginious.common.tasks_problems import Problem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
+
 
 class ClozeProblem(Problem):
     @classmethod
@@ -10,51 +29,73 @@ class ClozeProblem(Problem):
         return "cloze"
 
     @classmethod
-    def input_type(cls):
-        # Grader receives: {"1": "...", "2": "..."}
-        return "dict"
-
-    @classmethod
     def get_text_fields(cls):
+        # allow teachers to edit/translate these
         return ["name", "text"]
 
+    @classmethod
+    def input_type(cls):
+        # IMPORTANT: must be a single value so INGInious can validate it.
+        # We'll receive a JSON string and decode it.
+        return "string"
+
     def _solutions(self):
+        """Parse expected answers out of self._data['text']."""
         text = (self._data or {}).get("text", "") or ""
         sol = {}
+
         for slot, kind, rhs in _TOKEN_RE.findall(text):
             rhs = rhs.strip()
             if kind == "SHORTANSWER":
-                sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
+                # multiple variants: A|B|C
+                variants = [s.strip() for s in rhs.split("|") if s.strip()]
+                sol[slot] = ("SHORTANSWER", variants)
             else:
+                # NUMERICAL may have tolerance like "100±0.5"
                 tol = 0.0
+                base = rhs
                 if "±" in rhs:
                     base, t = rhs.split("±", 1)
-                    rhs = base.strip()
+                    base = base.strip()
                     tol = float(t.strip())
-                sol[slot] = ("NUMERICAL", (float(rhs), tol))
+                sol[slot] = ("NUMERICAL", (float(base), tol))
+
         return sol
 
     def input_is_consistent(self, value):
-        if not isinstance(value, dict):
-            return False
-        return all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+        # Called by backend for safety; frontend also does its own checks.
+        return isinstance(value, str) and value.strip() != ""
 
     def check_answer(self, value, seed):
+        """
+        value: JSON string like {"1":"H2O","2":"100"}
+        Return dict with success/message/score.
+        """
         sols = self._solutions()
-        if not isinstance(value, dict):
+
+        try:
+            answers = json.loads(value) if isinstance(value, str) else {}
+        except Exception:
             return {"success": False, "message": "Malformed submission.", "score": 0.0}
+
+        if not isinstance(answers, dict):
+            return {"success": False, "message": "Malformed submission.", "score": 0.0}
+
+        # normalize keys to strings
+        answers = {str(k): ("" if v is None else str(v)) for k, v in answers.items()}
 
         correct = 0
         total = max(len(sols), 1)
-        messages = []
+        per_blank = []
 
         for slot, (kind, rhs) in sols.items():
-            ans = (value.get(slot) or "").strip()
+            ans = (answers.get(slot) or "").strip()
             ok = False
 
             if kind == "SHORTANSWER":
                 ok = any(ans.lower() == exp.lower() for exp in rhs)
-            else:
+
+            elif kind == "NUMERICAL":
                 try:
                     x = float(ans)
                     target, tol = rhs
@@ -63,7 +104,11 @@ class ClozeProblem(Problem):
                     ok = False
 
             correct += 1 if ok else 0
-            messages.append(f"{slot}: {'✓' if ok else '✗'}")
+            per_blank.append(f"{slot}:{'✓' if ok else '✗'}")
 
         score = correct / total
-        return {"success": score == 1.0, "message": "; ".join(messages), "score": score}
+        return {
+            "success": score == 1.0,
+            "message": "; ".join(per_blank),
+            "score": score,
+        }
