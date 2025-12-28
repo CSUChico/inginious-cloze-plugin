@@ -4,6 +4,7 @@ from inginious.common.tasks_problems import Problem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
+
 class ClozeProblem(Problem):
     @classmethod
     def get_type(cls):
@@ -11,12 +12,25 @@ class ClozeProblem(Problem):
 
     @classmethod
     def input_type(cls):
-        # The grading input is a dict: {slot -> str_answer}
         return "dict"
 
     @classmethod
     def get_text_fields(cls):
         return ["name", "text"]
+
+    # ✅ IMPORTANT: provide __init__ matching *newer* INGInious
+    def __init__(self, problemid, problem_content, translations=None, taskfs=None):
+        """
+        Different INGInious versions have different Problem.__init__ signatures.
+        Some are: Problem(id, content)
+        Others:      Problem(id, content, translations, taskfs)
+
+        We support both.
+        """
+        try:
+            super().__init__(problemid, problem_content, translations, taskfs)
+        except TypeError:
+            super().__init__(problemid, problem_content)
 
     def _solutions(self):
         text = (getattr(self, "_data", None) or {}).get("text", "") or ""
