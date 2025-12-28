@@ -12,10 +12,37 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def get_type_name(cls, language): return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # Initialize the DisplayableProblem side (what the webapp expects)
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
-        # Ensure the backend helpers (from Problem/ClozeProblem) have the data
-        self._data = problem_content
+        self._data = problem_content  # make sure frontend has the YAML
+
+    # --- FIX #1: match the webapp's expected signature
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+        # INGInious passes a TaskInput-like mapping. Be permissive for now:
+        # accept either a single field (textarea) named after the problem id
+        # or multiple fields like "<id>__1", "<id>__2", ...
+        pid = self.get_id()
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            # fall back to dict-like
+            raw = task_input.get(pid)
+        return True  # minimal validator; tighten later if you want
+
+    # --- FIX #2: also provide these abstract methods with the right signatures
+    def get_text_fields(self):
+        # nothing special to translate here (title/statement is handled by templates)
+        return []
+
+    def input_type(self):
+        # single-line/textarea textual answer (what templates expect)
+        return "string"
+
+    def check_answer(self, task_input, language):
+        """
+        Optional: only used if a 'Check' flow is invoked on the frontend.
+        We keep it permissive and let the real grading happen in the backend.
+        """
+        return True, ""
 
     def show_input(self, template_helper, language, seed):
         """
