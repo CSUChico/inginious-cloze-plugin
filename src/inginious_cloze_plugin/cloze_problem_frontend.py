@@ -11,6 +11,12 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     @classmethod
     def get_type_name(cls, language): return "Cloze"
 
+    def __init__(self, problemid, problem_content, translations, task_fs):
+        # Initialize the DisplayableProblem side (what the webapp expects)
+        DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
+        # Ensure the backend helpers (from Problem/ClozeProblem) have the data
+        self._data = problem_content
+
     def show_input(self, template_helper, language, seed):
         """
         Render the stem text, replacing tokens with <input> fields.
