@@ -4,7 +4,6 @@ from inginious.common.tasks_problems import Problem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
-
 class ClozeProblem(Problem):
     @classmethod
     def get_type(cls):
@@ -12,55 +11,43 @@ class ClozeProblem(Problem):
 
     @classmethod
     def input_type(cls):
+        # backend expects a dict: {slot: answer_string}
         return "dict"
 
     @classmethod
     def get_text_fields(cls):
+        # allow authoring/translation
         return ["name", "text"]
 
-    # ✅ IMPORTANT: provide __init__ matching *newer* INGInious
-    def __init__(self, problemid, problem_content, translations=None, taskfs=None):
-        """
-        Different INGInious versions have different Problem.__init__ signatures.
-        Some are: Problem(id, content)
-        Others:      Problem(id, content, translations, taskfs)
-
-        We support both.
-        """
-        try:
-            super().__init__(problemid, problem_content, translations, taskfs)
-        except TypeError:
-            super().__init__(problemid, problem_content)
-
     def _solutions(self):
-        text = (getattr(self, "_data", None) or {}).get("text", "") or ""
+        text = (self._data or {}).get("text", "") or ""
         sol = {}
         for slot, kind, rhs in _TOKEN_RE.findall(text):
-            rhs = rhs.strip()
             if kind == "SHORTANSWER":
                 sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
             else:
                 tol = 0.0
-                val = rhs
-                if "±" in rhs:
-                    base, t = rhs.split("±", 1)
-                    val = base.strip()
-                    tol = float(t.strip())
+                val = rhs.strip()
+                if "±" in val:
+                    base, t = val.split("±", 1)
+                    val, tol = base.strip(), float(t.strip())
                 sol[slot] = ("NUMERICAL", (float(val), tol))
         return sol
 
     def input_is_consistent(self, value):
-        if not isinstance(value, dict):
-            return False
-        return all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+        return (
+            isinstance(value, dict)
+            and all(isinstance(k, str) for k in value.keys())
+            and all(isinstance(v, str) for v in value.values())
+        )
 
     def check_answer(self, value, seed):
         sols = self._solutions()
         if not isinstance(value, dict):
             return {"success": False, "message": "Malformed submission.", "score": 0.0}
 
-        total = max(len(sols), 1)
         correct = 0
+        total = max(len(sols), 1)
         messages = []
 
         for slot, (kind, rhs) in sols.items():
@@ -81,4 +68,4 @@ class ClozeProblem(Problem):
             messages.append(f"{slot}: {'✓' if ok else '✗'}")
 
         score = correct / total
-        return {"success": score == 1.0, "message": "; ".join(messages), "score": float(score)}
+        return {"success": score == 1.0, "message": "; ".join(messages), "score": score}
