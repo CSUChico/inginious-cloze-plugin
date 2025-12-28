@@ -3,7 +3,7 @@ from .cloze_problem_backend import ClozeProblem
 from .cloze_problem_frontend import DisplayableClozeProblem
 
 def init(plugin_manager, course_factory, client, entry):
-    # (optional) task editor hooks here — safely guarded
+    # (optional) editor hooks if you add them later
     try:
         from . import task_editor as te
         if hasattr(plugin_manager, "add_hook"):
