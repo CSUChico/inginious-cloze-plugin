@@ -1,11 +1,11 @@
 # src/inginious_cloze_plugin/__init__.py
 
-# Import at module import time so PluginManager inspection sees the classes
-from . import cloze_problem_backend  # defines ClozeProblem (Problem)
-from . import cloze_problem_frontend # defines DisplayableClozeProblem (DisplayableProblem)
+# Make classes visible on the package object so the inspector finds them
+from .cloze_problem_backend import ClozeProblem       # backend Problem
+from .cloze_problem_frontend import DisplayableClozeProblem  # frontend DisplayableProblem
 
 def init(plugin_manager, course_factory, client, entry):
-    """Optional: register Task Editor hooks (after load)."""
+    # Optional: task editor hooks
     try:
         from . import task_editor as te
         if hasattr(plugin_manager, "add_hook"):
@@ -16,5 +16,4 @@ def init(plugin_manager, course_factory, client, entry):
             if hasattr(te, "task_editor_submit"):
                 plugin_manager.add_hook("task_editor_submit", te.task_editor_submit)
     except Exception:
-        # Hooks are optional; don’t block plugin load
         pass
