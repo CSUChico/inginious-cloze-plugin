@@ -11,43 +11,41 @@ _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 def _coerce_problem_inputs(task_input, pid):
     """
-    INGInious may pass:
-      - a TaskInput object (has get_problem_input)
-      - a dict-like mapping of raw POST fields
-    We normalize into {slot: value}.
+    Normalize whatever INGInious passes into {slot: value}.
+    - Sometimes task_input is a TaskInput (has get_problem_input)
+    - Sometimes it's a dict-like mapping
     """
-    # TaskInput path
+    # TaskInput object path
     if hasattr(task_input, "get_problem_input"):
         raw = task_input.get_problem_input(pid)
-        # raw might already be a dict (depending on how frontend names inputs)
         if isinstance(raw, dict):
             return {str(k): ("" if v is None else str(v)) for k, v in raw.items()}
         if raw is None:
             return {}
-        # could be a single string field
         return {"1": str(raw)}
 
-    # Dict-like POST path (Flask request.form-like)
+    # Dict-like path (Flask form dict)
     if not hasattr(task_input, "get"):
         return {}
 
-    # Preferred naming from show_input():  name="<pid>[<slot>]"
     out = {}
+
+    # Preferred naming: p1[1], p1[2], ...
     prefix = f"{pid}["
-    for k in list(task_input.keys()):
+    for k in task_input.keys():
         if k.startswith(prefix) and k.endswith("]"):
             slot = k[len(prefix):-1]
             out[str(slot)] = "" if task_input.get(k) is None else str(task_input.get(k))
 
-    # Fallback: name="<pid>__<slot>"
+    # Fallback: p1__1, p1__2, ...
     if not out:
         prefix2 = f"{pid}__"
-        for k in list(task_input.keys()):
+        for k in task_input.keys():
             if k.startswith(prefix2):
                 slot = k[len(prefix2):]
                 out[str(slot)] = "" if task_input.get(k) is None else str(task_input.get(k))
 
-    # Last resort: single field named exactly pid
+    # Last fallback: p1 (single field)
     if not out and pid in task_input:
         out["1"] = "" if task_input.get(pid) is None else str(task_input.get(pid))
 
@@ -55,14 +53,6 @@ def _coerce_problem_inputs(task_input, pid):
 
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
-    """
-    Frontend rendering class. Must be instantiable by the webapp.
-
-    Key point:
-    - Ensure Problem.__init__ runs so self._data exists.
-    - Ensure DisplayableProblem.__init__ runs so the web UI knows the metadata.
-    """
-
     @classmethod
     def get_type(cls):
         return "cloze"
@@ -72,33 +62,26 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # Problem sets self._data (this is what you were missing)
+        # CRITICAL: Problem sets self._data
         Problem.__init__(self, problemid, problem_content)
 
-        # DisplayableProblem sets up translation + filesystem bits used by templates
+        # DisplayableProblem sets frontend-specific things
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
 
-    # Webapp expects: input_is_consistent(task_input, default_allowed_ext, default_max_size)
+    # Must match frontend call signature
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
         pid = self.get_id()
         values = _coerce_problem_inputs(task_input, pid)
-
-        # Minimal validation: all slots must be strings.
-        # (Real validation happens in backend check_answer.)
         return isinstance(values, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in values.items())
 
-    # Some parts of the frontend treat DisplayableProblem as abstract; keep stubs compatible.
     def get_text_fields(self):
         return ["name", "text"]
 
     def input_type(self):
         return "dict"
 
+    # Needed so class is not abstract (some versions treat DisplayableProblem as abstract)
     def check_answer(self, task_input, language):
-        """
-        This frontend 'check_answer' is used only for interactive checks in some flows.
-        We keep it permissive; grading happens in backend container.
-        """
         return True, ""
 
     def show_input(self, template_helper, language, seed):
@@ -135,11 +118,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     @classmethod
     def show_editbox(cls, template_helper, key, language):
-        # Optional editor support
-        if key == "text":
-            return '<textarea name="text" class="form-control" rows="6"></textarea>'
         if key == "name":
             return '<input type="text" name="name" class="form-control" />'
+        if key == "text":
+            return '<textarea name="text" class="form-control" rows="6"></textarea>'
         return ""
 
     @classmethod
