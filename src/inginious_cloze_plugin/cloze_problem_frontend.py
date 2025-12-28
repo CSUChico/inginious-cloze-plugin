@@ -13,26 +13,60 @@ _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     """
-    Frontend display for ClozeProblem.
+    Displayable version of ClozeProblem for INGInious frontend (0.9.x).
 
-    Renders:
-      - visible <input> fields for each cloze blank
-      - one hidden input containing JSON mapping slot->value (what backend reads)
+    - Renders visible blanks for tokens in "text"
+    - Stores all answers into ONE hidden field named by problem id as JSON:
+        {"1": "...", "2": "..."}
     """
 
-    # ---- Required by DisplayableProblem (abstract) ----
+    # ---- DisplayableProblem abstract requirements ----
+
+    @property
+    def input_type(self):
+        # Used by the task editor UI; "text" is safe/neutral here.
+        return "text"
+
     def get_text_fields(self):
-        """
-        Return editable text fields for the task editor/export.
-        INGInious uses this to know which fields are 'text-like' and translatable.
-        """
-        # "text" is the field in task.yaml/problem content that contains the cloze prompt
+        # Editor/export: which fields contain text
         return ["text"]
 
-    # ---------------------------------------------------
+    def show_editbox_templates(self, template_helper, language):
+        """
+        Return templates for the task editor (problem creation UI).
+        Minimal implementation: provide a default skeleton.
+        """
+        # Key is template name, value is YAML snippet (string)
+        return {
+            "Cloze (basic)": (
+                "type: cloze\n"
+                "text: |\n"
+                "  Water is {1:SHORTANSWER:=H2O}. Boiling point is {2:NUMERICAL:=100} C.\n"
+            )
+        }
+
+    def show_editbox(self, template_helper, language, seed):
+        """
+        Render the edit box shown in task editor.
+        Minimal: just a textarea bound to 'text'.
+        """
+        pid = self.get_id()
+        text = (self._data or {}).get("text", "") or ""
+        return f"""
+<div class="form-group">
+  <label for="cloze_text_{html.escape(pid)}">Cloze text</label>
+  <textarea class="form-control" id="cloze_text_{html.escape(pid)}"
+            name="problems[{html.escape(pid)}][text]" rows="8">{html.escape(text)}</textarea>
+  <p class="help-block">
+    Use tokens like <code>{{1:SHORTANSWER:=H2O}}</code> or <code>{{2:NUMERICAL:=100}}</code>.
+  </p>
+</div>
+"""
+
+    # -------------------------------------------------
 
     def __init__(self, problemid, problem_content, translations, taskfs):
-        # IMPORTANT: ClozeProblem already calls Problem.__init__ correctly
+        # ClozeProblem calls the correct base Problem.__init__(..., translations, taskfs)
         super().__init__(problemid, problem_content, translations, taskfs)
 
     @classmethod
@@ -43,32 +77,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def get_type_name(cls, language):
         return "Cloze"
 
-    @classmethod
-    def input_type(cls):
-        """
-        Returns the type of the problem (used in the YAML configuration).
-        """
-        return "cloze"
-
-    def show_editbox(self):
-        """
-        Returns the HTML for the visual editor. 
-        Returning an empty string disables the visual editor for this problem type
-        but allows the system to load without crashing.
-        """
-        return ""
-
-    @classmethod
-    def show_editbox_templates(cls):
-        """
-        Returns any JavaScript templates needed for the editor.
-        """
-        return ""
-
-    def _render_prompt_with_inputs(self, text, html_name_prefix):
-        """
-        Replace tokens like {1:SHORTANSWER:=H2O} with <input ...>.
-        """
+    def _render_prompt_with_inputs(self, text, uniq_prefix):
         parts = []
         last = 0
 
@@ -84,13 +93,12 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
                 input_type = "number"
                 step_attr = ' step="any"'
 
-            # Visible input: we DO NOT submit it directly to INGInious;
-            # JS copies values into the hidden JSON field.
             parts.append(
                 f'<input type="{input_type}" class="form-control cloze-input" '
                 f'data-slot="{html.escape(slot)}" '
-                f'id="{html_name_prefix}_slot_{html.escape(slot)}" '
-                f'{step_attr} style="display:inline-block; width:auto; min-width:120px; vertical-align:middle;">'
+                f'id="{uniq_prefix}_slot_{html.escape(slot)}" '
+                f'{step_attr} '
+                f'style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">'
             )
 
             last = m.end()
@@ -100,33 +108,27 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     def show_input(self, template_helper, language, seed):
         """
-        Render HTML for the task page.
-        The backend expects a single field named by problem id containing JSON:
-          {"1":"...", "2":"..."}
+        Render student-facing input.
         """
         data = self._data or {}
         text = data.get("text", "") or ""
 
         pid = self.get_id()
-
-        # Unique prefix so multiple problems on same page don't collide
         uniq = f"cloze_{pid}_{uuid4().hex}"
 
         prompt_html = self._render_prompt_with_inputs(text, uniq)
 
-        # Hidden field that INGInious will submit as problem input
+        # The *only* submitted field for this problem:
         hidden = (
             f'<input type="hidden" name="{html.escape(pid)}" '
             f'id="{uniq}_json" value="{html.escape(json.dumps({}))}">'
         )
 
-        # JS: copy all visible cloze inputs into JSON hidden field before submit,
-        # and also on change so the value is always current.
         script = f"""
 <script>
 (function() {{
-  var root = document.getElementById("{uniq}_json");
-  if (!root) return;
+  var hidden = document.getElementById("{uniq}_json");
+  if (!hidden) return;
 
   function collect() {{
     var inputs = document.querySelectorAll('input.cloze-input[id^="{uniq}_slot_"]');
@@ -135,10 +137,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       var slot = inp.getAttribute("data-slot");
       obj[slot] = inp.value;
     }});
-    root.value = JSON.stringify(obj);
+    hidden.value = JSON.stringify(obj);
   }}
 
-  // Update on input
   document.addEventListener("input", function(ev) {{
     if (ev.target && ev.target.classList && ev.target.classList.contains("cloze-input")
         && ev.target.id.indexOf("{uniq}_slot_") === 0) {{
@@ -146,21 +147,18 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
   }});
 
-  // Ensure update right before submit (covers autofill)
-  var form = root.closest("form");
+  var form = hidden.closest("form");
   if (form) {{
     form.addEventListener("submit", function() {{
       collect();
     }});
   }}
 
-  // Initial populate
   collect();
 }})();
 </script>
 """
 
-        # Wrap in a bootstrap-ish container; INGInious templates expect raw HTML
         return f"""
 <div class="cloze-problem">
   <div class="cloze-text" style="line-height:2.2;">
@@ -173,12 +171,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
         """
-        Called by frontend BEFORE submission to validate required fields.
-        Must accept task_input as TaskInput object (normal) OR a dict (some flows).
+        Frontend pre-submit validation.
+        Must handle TaskInput object OR dict-like (some paths).
         """
         pid = self.get_id()
 
-        # Read raw
         if hasattr(task_input, "get_problem_input"):
             raw = task_input.get_problem_input(pid)
         else:
@@ -187,7 +184,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         if raw is None or raw == "":
             return False
 
-        # Must be JSON dict
         try:
             obj = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -196,7 +192,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         if not isinstance(obj, dict):
             return False
 
-        # Must have all slots present and non-empty
         text = (self._data or {}).get("text", "") or ""
         slots = [m.group(1) for m in _TOKEN_RE.finditer(text)]
         for s in slots:
