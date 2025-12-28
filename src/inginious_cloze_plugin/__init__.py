@@ -3,6 +3,11 @@ def init(plugin_manager, course_factory, client, entry):
     # Import side effects register the classes via module inspection
     from . import cloze_problem_backend, cloze_problem_frontend, task_editor
 
-    # (optional) add your task editor tab hook here if you have one:
-    plugin_manager.add_hook("task_editor_tab", task_editor.task_editor_tab)
-    plugin_manager.add_hook("task_editor_submit", task_editor.task_editor_submit)
+     # Only register hooks that exist (avoids AttributeError)
+    if hasattr(plugin_manager, "add_hook"):
+        if hasattr(te, "task_editor_tabs"):
+            plugin_manager.add_hook("task_editor_tabs", te.task_editor_tabs)
+        if hasattr(te, "task_editor_tab"):
+            plugin_manager.add_hook("task_editor_tab", te.task_editor_tab)
+        if hasattr(te, "task_editor_submit"):
+            plugin_manager.add_hook("task_editor_submit", te.task_editor_submit)
