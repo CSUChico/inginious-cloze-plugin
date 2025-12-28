@@ -1,13 +1,25 @@
 # -*- coding: utf-8 -*-
 import html
+import logging
 import re
 
 from inginious.frontend.task_problems import DisplayableProblem
-from .cloze_problem_backend import ClozeProblem  # ✅ REQUIRED (fixes your NameError)
+from .cloze_problem_backend import ClozeProblem
+
+log = logging.getLogger(__name__)
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
+    """
+    Frontend display + input parsing/validation.
+
+    IMPORTANT:
+    - Must be instantiable by frontend Task() code:
+        (problemid, problem_content, translations, task_fs)
+    - Must implement DisplayableProblem abstract methods.
+    """
+
     @classmethod
     def get_type(cls):
         return "cloze"
@@ -17,71 +29,99 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # initialize both parents properly (INGInious expects Problem to get translations/taskfs)
-        ClozeProblem.__init__(self, problemid, problem_content, translations, task_fs)
-        DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
+        # This MUST be called so self._data exists and translations/taskfs are wired.
+        super().__init__(problemid, problem_content, translations, task_fs)
 
-        # always preserve raw YAML
-        self._data = problem_content
+    # ---------- helpers (frontend side) ----------
 
-    # ---------- helper: translated field safe getter ----------
-    def _get_field(self, key, language, default=""):
-        data = getattr(self, "_data", None) or {}
-        val = data.get(key)
+    def _expected_slots(self):
+        """Slots that exist in the text (e.g., {'1','2'})."""
+        text = (self._data or {}).get("text", "") or ""
+        return [m.group(1) for m in _TOKEN_RE.finditer(text)]
 
-        if isinstance(val, dict):
-            if language in val and val[language]:
-                return val[language]
-            if "en" in val and val["en"]:
-                return val["en"]
-            for _, v in val.items():
-                if v:
-                    return v
-            return default
-
-        return val if val else default
-
-    # ---------- webapp validation hook ----------
-    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+    def _extract_from_task_input(self, task_input):
+        """
+        task_input is sometimes a TaskInput-like object, sometimes a dict.
+        We normalize it into dict[slot] = answer.
+        """
         pid = self.get_id()
-    
-        # Preferred: INGInious-normalized input
-        if hasattr(task_input, "get_problem_input"):
-            value = task_input.get_problem_input(pid)
-            if isinstance(value, dict):
-                # require all slots to be non-empty
-                return all(str(v).strip() != "" for v in value.values())
-    
-        # Fallback: raw POST fields (Flask MultiDict)
-        if hasattr(task_input, "keys"):
-            values = {}
-            prefix = f"{pid}["
-            for k in task_input.keys():
-                if k.startswith(prefix) and k.endswith("]"):
-                    slot = k[len(prefix):-1]
-                    values[slot] = task_input.get(k)
-    
-            if values:
-                return all(str(v).strip() != "" for v in values.values())
-    
-        return False
+        slots = self._expected_slots()
+        out = {}
 
-    # ---------- abstract methods required by DisplayableProblem ----------
+        # Case A: TaskInput-like (has get_problem_input)
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+            # Depending on INGI version/plugins, raw may already be a dict,
+            # OR it may be None and we must reconstruct from the flat form dict.
+            if isinstance(raw, dict):
+                for s in slots:
+                    out[s] = (raw.get(s) or "").strip()
+                return out
+
+        # Case B: dict-like: keys may be "p1[1]" or "p1__1" or even nested dict at pid
+        if isinstance(task_input, dict):
+            # nested dict under pid?
+            nested = task_input.get(pid)
+            if isinstance(nested, dict):
+                for s in slots:
+                    out[s] = (nested.get(s) or "").strip()
+                return out
+
+            # flat form keys: p1[1] and p1[2]
+            for s in slots:
+                v = task_input.get(f"{pid}[{s}]")
+                if v is None:
+                    # fallback style: p1__1
+                    v = task_input.get(f"{pid}__{s}")
+                out[s] = (v or "").strip()
+
+        return out
+
+    # ---------- required frontend hooks ----------
+
+    def input_type(self):
+        # Must match backend: we want a dict of slot->answer
+        return "dict"
+
     def get_text_fields(self):
         return ["name", "text"]
 
-    def input_type(self):
-        return "dict"
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+        """
+        Frontend validation that decides whether the submission is "complete".
+        This is what controls the red banner.
+        """
+        try:
+            answers = self._extract_from_task_input(task_input)
+            slots = self._expected_slots()
+
+            # Debug if you're still seeing the red banner:
+            log.debug("CLOZE input_is_consistent pid=%s slots=%s answers=%s task_input_type=%s",
+                      self.get_id(), slots, answers, type(task_input))
+
+            # require every slot to be filled (non-empty)
+            for s in slots:
+                if not (answers.get(s) or "").strip():
+                    return False
+            return True
+        except Exception:
+            log.exception("CLOZE input_is_consistent crashed")
+            return False
 
     def check_answer(self, task_input, language):
-        # frontend “check” is optional; let backend grading do the real work
+        """
+        Optional frontend-side check (some INGI flows call it).
+        We just say OK and let the backend grade.
+        """
         return True, ""
 
-    # ---------- rendering ----------
     def show_input(self, template_helper, language, seed):
+        """
+        Render the stem text, replacing tokens with <input> fields.
+        IMPORTANT: names are p1[1], p1[2], ... so they naturally form a dict.
+        """
         pid = self.get_id()
-        text = self._get_field("text", language, default="")
-        label = self._get_field("name", language, default="Question")
+        text = (self._data or {}).get("text", "") or ""
 
         parts = []
         last = 0
@@ -91,30 +131,33 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
             slot = m.group(1)
             input_name = f"{pid}[{slot}]"
+
             parts.append(
-                f'<input type="text" name="{html.escape(input_name)}" class="form-control" '
+                f'<input type="text" name="{input_name}" class="form-control" '
                 f'style="display:inline-block; width:12rem; margin:0 0.25rem;" />'
             )
+
             last = m.end()
 
         parts.append(html.escape(text[last:]))
 
-        return f"""
-<div class="panel panel-default">
-  <div class="panel-heading">{html.escape(label)}</div>
-  <div class="panel-body" style="line-height:2.2;">
-    {''.join(parts)}
-  </div>
-</div>
-"""
+        label = html.escape((self._data or {}).get("name", "Question") or "Question")
 
-    # ---------- optional editor support ----------
+        return f"""
+            <div class="panel panel-default">
+              <div class="panel-heading">{label}</div>
+              <div class="panel-body" style="line-height:2.2;">
+                {''.join(parts)}
+              </div>
+            </div>
+        """
+
     @classmethod
     def show_editbox(cls, template_helper, key, language):
         if key == "text":
             return '<textarea name="text" class="form-control" rows="6"></textarea>'
         if key == "name":
-            return '<input name="name" class="form-control" />'
+            return '<input type="text" name="name" class="form-control" />'
         return ""
 
     @classmethod
