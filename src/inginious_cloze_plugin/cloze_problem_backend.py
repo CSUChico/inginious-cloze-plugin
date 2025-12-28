@@ -9,7 +9,7 @@ IMPORTANT: The MCQ agent expects problem.check_answer() to return FIVE values:
 import json
 import re
 
-from inginious.common.task_problems import Problem
+from inginious.frontend.task_problems import Problem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
@@ -65,7 +65,6 @@ class ClozeProblem(Problem):
         try:
             obj = json.loads(s)
             if isinstance(obj, dict):
-                # normalize keys to strings
                 return {str(k): ("" if v is None else str(v)) for k, v in obj.items()}
         except Exception:
             pass
@@ -83,7 +82,6 @@ class ClozeProblem(Problem):
         return out
 
     def _shortanswer_ok(self, student, expected):
-        # allow multiple options with |
         options = [o.strip() for o in expected.split("|") if o.strip()]
         s = (student or "").strip()
         return any(s.lower() == o.lower() for o in options) if options else False
@@ -100,7 +98,6 @@ class ClozeProblem(Problem):
                 e_val = float(opt)
             except Exception:
                 continue
-            # exact or very small tolerance
             if abs(s_val - e_val) <= 1e-9:
                 return True
         return False
@@ -118,7 +115,6 @@ class ClozeProblem(Problem):
         errors = 0
 
         if not expected_items:
-            # No tokens -> nothing to grade; treat as valid
             return True, "", [], 0, {}
 
         if not answers:
@@ -151,11 +147,7 @@ class ClozeProblem(Problem):
 
         is_valid = (errors == 0)
         main = "Correct." if is_valid else "Some answers are incorrect."
-
-        # mcq_error_count: mcq agent uses this counter
         mcq_error_count = errors
-
-        # state: can be anything JSON-serializable; keep empty
         state = {}
 
         return is_valid, main, secondary, mcq_error_count, state
