@@ -11,48 +11,54 @@ class ClozeProblem(Problem):
 
     @classmethod
     def input_type(cls):
-        # We'll receive a dict of slot -> str
+        # we want TaskInput to deliver a dict {slot: str}
         return "dict"
 
     @classmethod
     def get_text_fields(cls):
-        # let teachers edit/translate the stem text
         return ["text", "name"]
 
     def _solutions(self):
-        """Parse expected answers from self._data['text'] once."""
         text = self._data.get("text", "")
         sol = {}
         for slot, kind, rhs in _TOKEN_RE.findall(text):
+            rhs = rhs.strip()
             if kind == "SHORTANSWER":
-                # allow multiple correct variants split by |
                 sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|")])
             else:
-                # NUMERICAL may have tolerance like 100±0.5 or just 100
                 tol = 0.0
-                val = rhs.strip()
+                val = rhs
                 if "±" in val:
                     base, t = val.split("±", 1)
                     val, tol = base.strip(), float(t.strip())
                 sol[slot] = ("NUMERICAL", (float(val), tol))
         return sol
 
-    def input_is_consistent(self, value):
-        # value should be a dict of strings keyed by slot ids
-        return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+    # IMPORTANT: must accept extra args from frontend validation path
+    def input_is_consistent(self, value, *args, **kwargs):
+        return (
+            isinstance(value, dict) and
+            all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+        )
 
-    def check_answer(self, value, seed):
+    # IMPORTANT: MCQ agent calls check_answer(task_input, language)
+    # (it uses "language" where you used "seed")
+    def check_answer(self, value, language):
         sols = self._solutions()
+
         if not isinstance(value, dict):
-            return {"success": False, "message": "Malformed submission.", "score": 0.0}
+            # valid=False => counts as a formatting error
+            return (False, "Malformed submission.", [], 1, {})
 
         correct = 0
         total = max(len(sols), 1)
-        messages = []
+        sub_msgs = []
+        state = {}
 
         for slot, (kind, rhs) in sols.items():
             ans = (value.get(slot) or "").strip()
             ok = False
+
             if kind == "SHORTANSWER":
                 ok = any(ans.lower() == exp.lower() for exp in rhs)
             else:
@@ -62,8 +68,15 @@ class ClozeProblem(Problem):
                     ok = abs(x - target) <= tol
                 except Exception:
                     ok = False
+
+            state[slot] = {"answer": ans, "ok": ok}
+            sub_msgs.append(f"{slot}: {'✓' if ok else '✗'}")
             correct += 1 if ok else 0
-            messages.append(f"{slot}: {'✓' if ok else '✗'}")
 
         score = correct / total
-        return {"success": score == 1.0, "message": "; ".join(messages), "score": score}
+
+        # For MCQAgent: error_count should be 0 for well-formed submissions
+        valid = True
+        main_msg = f"Score: {correct}/{total} ({score:.0%})"
+        error_count = 0
+        return (valid, main_msg, sub_msgs, error_count, state)
