@@ -3,19 +3,17 @@ import html
 import re
 
 from inginious.frontend.task_problems import DisplayableProblem
-from inginious.common.tasks_problems import Problem
-
 from .cloze_problem_backend import ClozeProblem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
+
 
 def _coerce_problem_inputs(task_input, pid):
     """
     Normalize whatever INGInious passes into {slot: value}.
     - Sometimes task_input is a TaskInput (has get_problem_input)
-    - Sometimes it's a dict-like mapping
+    - Sometimes it's a dict-like mapping (Flask form)
     """
-    # TaskInput object path
     if hasattr(task_input, "get_problem_input"):
         raw = task_input.get_problem_input(pid)
         if isinstance(raw, dict):
@@ -24,13 +22,12 @@ def _coerce_problem_inputs(task_input, pid):
             return {}
         return {"1": str(raw)}
 
-    # Dict-like path (Flask form dict)
     if not hasattr(task_input, "get"):
         return {}
 
     out = {}
 
-    # Preferred naming: p1[1], p1[2], ...
+    # Preferred: p1[1], p1[2], ...
     prefix = f"{pid}["
     for k in task_input.keys():
         if k.startswith(prefix) and k.endswith("]"):
@@ -62,13 +59,12 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # CRITICAL: Problem sets self._data
-        Problem.__init__(self, problemid, problem_content)
-
-        # DisplayableProblem sets frontend-specific things
+        # ✅ DO NOT call Problem.__init__ directly.
+        # Call our backend initializer (which handles varying signatures),
+        # then the DisplayableProblem initializer.
+        ClozeProblem.__init__(self, problemid, problem_content, translations, task_fs)
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
 
-    # Must match frontend call signature
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
         pid = self.get_id()
         values = _coerce_problem_inputs(task_input, pid)
@@ -80,7 +76,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def input_type(self):
         return "dict"
 
-    # Needed so class is not abstract (some versions treat DisplayableProblem as abstract)
+    # ✅ keep to avoid “abstract” instantiation errors on some versions
     def check_answer(self, task_input, language):
         return True, ""
 
