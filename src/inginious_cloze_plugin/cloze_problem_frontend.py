@@ -43,22 +43,28 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     # ---------- webapp validation hook ----------
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
-        """
-        INGInious frontend calls: problem.input_is_consistent(task_input, allowed_ext, max_size)
-        task_input is a dict-like mapping of submitted fields.
-        Our inputs are named:  <problemid>[<slot>]
-        """
         pid = self.get_id()
-
-        # accept either mapping or TaskInput-like
-        if hasattr(task_input, "get"):
-            keys = list(task_input.keys())
-        else:
-            return False
-
-        prefix = f"{pid}["
-        has_any = any(k.startswith(prefix) for k in keys)
-        return has_any  # require at least one cloze field submitted
+    
+        # Preferred: INGInious-normalized input
+        if hasattr(task_input, "get_problem_input"):
+            value = task_input.get_problem_input(pid)
+            if isinstance(value, dict):
+                # require all slots to be non-empty
+                return all(str(v).strip() != "" for v in value.values())
+    
+        # Fallback: raw POST fields (Flask MultiDict)
+        if hasattr(task_input, "keys"):
+            values = {}
+            prefix = f"{pid}["
+            for k in task_input.keys():
+                if k.startswith(prefix) and k.endswith("]"):
+                    slot = k[len(prefix):-1]
+                    values[slot] = task_input.get(k)
+    
+            if values:
+                return all(str(v).strip() != "" for v in values.values())
+    
+        return False
 
     # ---------- abstract methods required by DisplayableProblem ----------
     def get_text_fields(self):
