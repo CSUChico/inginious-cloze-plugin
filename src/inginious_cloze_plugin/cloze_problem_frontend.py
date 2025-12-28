@@ -1,15 +1,28 @@
 # -*- coding: utf-8 -*-
+"""
+Frontend (webapp/UI) Cloze problem for INGInious.
+
+IMPORTANT (INGInious 0.9.x):
+- Custom problems must submit ONE field per problem id.
+- We render multiple visible blanks for the student, but maintain a single hidden
+  <input name="<problemid>"> containing JSON of all blank values.
+- This satisfies INGInious' frontend validation and removes the red banner.
+
+Token syntax supported:
+  {1:SHORTANSWER:=H2O|h2o}
+  {2:NUMERICAL:=100±0.5}
+"""
+
 import html
-import logging
 import re
 
 from inginious.frontend.task_problems import DisplayableProblem
-
-log = logging.getLogger(__name__)
+from .cloze_problem_backend import ClozeProblem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
-class DisplayableClozeProblem(DisplayableProblem):
+
+class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     @classmethod
     def get_type(cls):
         return "cloze"
@@ -19,122 +32,117 @@ class DisplayableClozeProblem(DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # IMPORTANT: explicitly call DisplayableProblem init (do NOT rely on super/MRO)
+        # DisplayableProblem's init wires translations + task fs and stores data
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
 
-        # Belt+suspenders: ensure _data always exists
+        # Ensure both sides have access to the YAML dict in the same attribute name.
+        # (Some INGInious classes use _data; we make sure it's always set.)
         self._data = problem_content or {}
 
-    # --- required by DisplayableProblem / frontend expectations
+    # ===== Required by INGInious frontend plumbing =====
+
     def input_type(self):
-        return "dict"
+        # Must be a single string field so platform validation works.
+        return "string"
 
     def get_text_fields(self):
         return ["name", "text"]
 
     def check_answer(self, task_input, language):
-        # Frontend "quick check" is optional. Let backend grade.
+        """
+        Optional quick-check hook; keep permissive.
+        Real grading happens in backend container evaluation.
+        """
         return True, ""
-
-    # ---------- helpers ----------
-    def _expected_slots(self):
-        text = (self._data or {}).get("text", "") or ""
-        return [m.group(1) for m in _TOKEN_RE.finditer(text)]
-
-    def _extract_answers(self, task_input):
-        """
-        Normalize form submission into {"1": "...", "2": "..."}.
-        task_input may be dict-like or TaskInput-like depending on flow/version.
-        """
-        pid = self.get_id()
-        slots = self._expected_slots()
-        out = {}
-
-        # TaskInput-like
-        if hasattr(task_input, "get_problem_input"):
-            raw = task_input.get_problem_input(pid)
-            if isinstance(raw, dict):
-                for s in slots:
-                    out[s] = (raw.get(s) or "").strip()
-                return out
-
-        # dict-like
-        if isinstance(task_input, dict):
-            # nested dict under pid?
-            nested = task_input.get(pid)
-            if isinstance(nested, dict):
-                for s in slots:
-                    out[s] = (nested.get(s) or "").strip()
-                return out
-
-            # flat form: p1[1] / p1[2]
-            for s in slots:
-                v = task_input.get(f"{pid}[{s}]")
-                if v is None:
-                    # fallback: p1__1
-                    v = task_input.get(f"{pid}__{s}")
-                out[s] = (v or "").strip()
-
-        return out
 
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
         """
-        Controls the red banner ("Please answer all questions...").
-        Must return True when all blanks are filled.
+        INGInious calls this with (task_input, allowed_exts, max_size).
+
+        task_input may be a TaskInput-like object OR a raw dict, depending on code path.
+        We consider consistent if the single hidden field for this problem is non-empty.
         """
-        try:
-            slots = self._expected_slots()
-            answers = self._extract_answers(task_input)
+        pid = self.get_id()
 
-            log.debug("CLOZE consistent? pid=%s slots=%s answers=%s input_type=%s",
-                      self.get_id(), slots, answers, type(task_input))
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            raw = task_input.get(pid)
 
-            # require all slots non-empty
-            for s in slots:
-                if not (answers.get(s) or "").strip():
-                    return False
-            return True
-        except Exception:
-            log.exception("CLOZE input_is_consistent crashed")
-            return False
+        return bool(raw and str(raw).strip())
+
+    # ===== Rendering =====
 
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
-        text = (self._data or {}).get("text", "") or ""
+        data = getattr(self, "_data", {}) or {}
+        text = data.get("text", "") or ""
 
         parts = []
         last = 0
+        slots = []
 
         for m in _TOKEN_RE.finditer(text):
             parts.append(html.escape(text[last:m.start()]))
 
             slot = m.group(1)
-            input_name = f"{pid}[{slot}]"
+            slots.append(slot)
 
+            # visible blank - NO name attribute!
+            # (We only submit via the hidden JSON field named pid.)
             parts.append(
-                f'<input type="text" name="{input_name}" class="form-control" '
+                f'<input type="text" class="form-control cloze-input" '
+                f'data-slot="{html.escape(slot)}" '
                 f'style="display:inline-block; width:12rem; margin:0 0.25rem;" />'
             )
             last = m.end()
 
         parts.append(html.escape(text[last:]))
 
-        label = html.escape((self._data or {}).get("name", "Question") or "Question")
+        label = html.escape(data.get("name", "Question"))
+
+        # One hidden field that will be submitted as the problem answer
+        # hidden[name=pid] must exist for INGInious consistency checks to pass.
         return f"""
-            <div class="panel panel-default">
-              <div class="panel-heading">{label}</div>
-              <div class="panel-body" style="line-height:2.2;">
-                {''.join(parts)}
-              </div>
-            </div>
-        """
+<div class="panel panel-default">
+  <div class="panel-heading">{label}</div>
+  <div class="panel-body" style="line-height:2.2;">
+    {''.join(parts)}
+    <input type="hidden" name="{html.escape(pid)}" id="{html.escape(pid)}" />
+  </div>
+</div>
+
+<script>
+(function(){{
+  // Find the panel body that contains this script tag
+  const root = document.currentScript.closest('.panel');
+  if (!root) return;
+
+  const hidden = root.querySelector('input[type="hidden"][name="{pid}"]');
+  const inputs = root.querySelectorAll('input.cloze-input');
+
+  function updateHidden(){{
+    const obj = {{}};
+    inputs.forEach((inp) => {{
+      obj[inp.dataset.slot] = inp.value || "";
+    }});
+    hidden.value = JSON.stringify(obj);
+  }}
+
+  inputs.forEach((inp) => inp.addEventListener("input", updateHidden));
+  updateHidden();
+}})();
+</script>
+"""
+
+    # ===== Optional editor support (can be minimal) =====
 
     @classmethod
     def show_editbox(cls, template_helper, key, language):
+        if key == "name":
+            return '<input name="name" class="form-control" />'
         if key == "text":
             return '<textarea name="text" class="form-control" rows="6"></textarea>'
-        if key == "name":
-            return '<input type="text" name="name" class="form-control" />'
         return ""
 
     @classmethod
