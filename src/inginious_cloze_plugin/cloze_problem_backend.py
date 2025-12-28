@@ -3,7 +3,7 @@ from inginious.common.tasks_problems import Problem
 class ClozeProblem(Problem):
     @classmethod
     def get_type(cls):
-        return "cloze"
+        return "cloze"        # <-- must match
 
     def parse_problem(self, problem_content):
         self._raw = problem_content.get("text", "")
