@@ -1,4 +1,4 @@
-from inginious.frontend.tasks_problems import DisplayableProblem
+from inginious.frontend.task_problems import DisplayableProblem
 
 class DisplayableClozeProblem(DisplayableProblem):
     @classmethod
