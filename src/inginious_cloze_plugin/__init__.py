@@ -1,7 +1,9 @@
 # inginious_cloze_plugin/__init__.py
 def init(plugin_manager, course_factory, client, entry):
     # Import side effects register the classes via module inspection
-    from . import cloze_problem_backend, cloze_problem_frontend, task_editor
+    from . import cloze_problem_backend, cloze_problem_frontend
+    from . import task_editor as te
+
 
      # Only register hooks that exist (avoids AttributeError)
     if hasattr(plugin_manager, "add_hook"):
