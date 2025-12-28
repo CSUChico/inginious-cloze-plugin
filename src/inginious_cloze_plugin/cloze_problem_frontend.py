@@ -1,16 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Frontend (webapp/UI) Cloze problem for INGInious 0.9.x.
-
-- Renders multiple visible blanks.
-- Submits ONE hidden input named <problemid> containing JSON of all blank values.
-- Forces hidden field update on input AND on form submit.
-- input_is_consistent() accepts string/list/dict shapes returned by INGInious.
-"""
 
 import html
 import json
 import re
+from uuid import uuid4
 
 from inginious.frontend.task_problems import DisplayableProblem
 from .cloze_problem_backend import ClozeProblem
@@ -19,6 +12,29 @@ _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
+    """
+    Frontend display for ClozeProblem.
+
+    Renders:
+      - visible <input> fields for each cloze blank
+      - one hidden input containing JSON mapping slot->value (what backend reads)
+    """
+
+    # ---- Required by DisplayableProblem (abstract) ----
+    def get_text_fields(self):
+        """
+        Return editable text fields for the task editor/export.
+        INGInious uses this to know which fields are 'text-like' and translatable.
+        """
+        # "text" is the field in task.yaml/problem content that contains the cloze prompt
+        return ["text"]
+
+    # ---------------------------------------------------
+
+    def __init__(self, problemid, problem_content, translations, taskfs):
+        # IMPORTANT: ClozeProblem already calls Problem.__init__ correctly
+        super().__init__(problemid, problem_content, translations, taskfs)
+
     @classmethod
     def get_type(cls):
         return "cloze"
@@ -27,69 +43,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def get_type_name(cls, language):
         return "Cloze"
 
-    def __init__(self, problemid, problem_content, translations, task_fs):
-        DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
-        # Make sure _data always exists (several places expect it)
-        self._data = problem_content or {}
-
-    # INGInious expects a single field for custom types to pass consistency checks
-    def input_type(self):
-        return "string"
-
-    def _extract_raw_value(self, raw):
+    def _render_prompt_with_inputs(self, text, html_name_prefix):
         """
-        INGInious 0.9.x may provide:
-          - string
-          - list of strings
-          - dict-like payloads in some paths
-        Normalize to a single string (or "").
+        Replace tokens like {1:SHORTANSWER:=H2O} with <input ...>.
         """
-        if raw is None:
-            return ""
-
-        # Most common: already a string
-        if isinstance(raw, str):
-            return raw
-
-        # Sometimes: list (take first non-empty)
-        if isinstance(raw, (list, tuple)):
-            for item in raw:
-                s = self._extract_raw_value(item)
-                if str(s).strip():
-                    return s
-            return ""
-
-        # Sometimes: dict-ish
-        if isinstance(raw, dict):
-            # try typical keys
-            for k in ("value", "answer", "data", "raw"):
-                if k in raw:
-                    return self._extract_raw_value(raw.get(k))
-            # fallback: JSON dump (at least non-empty)
-            try:
-                return json.dumps(raw)
-            except Exception:
-                return ""
-
-        # fallback
-        return str(raw)
-
-    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
-        pid = self.get_id()
-
-        if hasattr(task_input, "get_problem_input"):
-            raw = task_input.get_problem_input(pid)
-        else:
-            raw = task_input.get(pid)
-
-        s = self._extract_raw_value(raw).strip()
-        return bool(s)
-
-    def show_input(self, template_helper, language, seed):
-        pid = self.get_id()
-        text = (self._data or {}).get("text", "") or ""
-        label = html.escape((self._data or {}).get("name", "Question") or "Question")
-
         parts = []
         last = 0
 
@@ -97,75 +54,132 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             parts.append(html.escape(text[last:m.start()]))
 
             slot = m.group(1)
-            # Visible inputs have NO name attribute (we only submit the hidden one).
+            kind = m.group(2)
+
+            input_type = "text"
+            step_attr = ""
+            if kind == "NUMERICAL":
+                input_type = "number"
+                step_attr = ' step="any"'
+
+            # Visible input: we DO NOT submit it directly to INGInious;
+            # JS copies values into the hidden JSON field.
             parts.append(
-                f'<input type="text" class="form-control cloze-input" '
+                f'<input type="{input_type}" class="form-control cloze-input" '
                 f'data-slot="{html.escape(slot)}" '
-                f'style="display:inline-block; width:12rem; margin:0 0.25rem;" />'
+                f'id="{html_name_prefix}_slot_{html.escape(slot)}" '
+                f'{step_attr} style="display:inline-block; width:auto; min-width:120px; vertical-align:middle;">'
             )
+
             last = m.end()
 
         parts.append(html.escape(text[last:]))
+        return "".join(parts)
 
-        # Use a unique DOM id so multiple cloze problems on a page don't collide
-        root_id = f"cloze-root-{pid}"
+    def show_input(self, template_helper, language, seed):
+        """
+        Render HTML for the task page.
+        The backend expects a single field named by problem id containing JSON:
+          {"1":"...", "2":"..."}
+        """
+        data = self._data or {}
+        text = data.get("text", "") or ""
 
-        return f"""
-<div class="panel panel-default" id="{html.escape(root_id)}">
-  <div class="panel-heading">{label}</div>
-  <div class="panel-body" style="line-height:2.2;">
-    {''.join(parts)}
-    <input type="hidden" name="{html.escape(pid)}" id="cloze-hidden-{html.escape(pid)}" />
-  </div>
-</div>
+        pid = self.get_id()
 
+        # Unique prefix so multiple problems on same page don't collide
+        uniq = f"cloze_{pid}_{uuid4().hex}"
+
+        prompt_html = self._render_prompt_with_inputs(text, uniq)
+
+        # Hidden field that INGInious will submit as problem input
+        hidden = (
+            f'<input type="hidden" name="{html.escape(pid)}" '
+            f'id="{uniq}_json" value="{html.escape(json.dumps({}))}">'
+        )
+
+        # JS: copy all visible cloze inputs into JSON hidden field before submit,
+        # and also on change so the value is always current.
+        script = f"""
 <script>
 (function() {{
-  // Find our container deterministically
-  var root = document.getElementById("{root_id}");
+  var root = document.getElementById("{uniq}_json");
   if (!root) return;
 
-  var hidden = root.querySelector('input[type="hidden"][name="{pid}"]');
-  var inputs = root.querySelectorAll('input.cloze-input');
-
-  function updateHidden() {{
+  function collect() {{
+    var inputs = document.querySelectorAll('input.cloze-input[id^="{uniq}_slot_"]');
     var obj = {{}};
-    for (var i = 0; i < inputs.length; i++) {{
-      var inp = inputs[i];
-      obj[inp.getAttribute("data-slot")] = inp.value || "";
+    inputs.forEach(function(inp) {{
+      var slot = inp.getAttribute("data-slot");
+      obj[slot] = inp.value;
+    }});
+    root.value = JSON.stringify(obj);
+  }}
+
+  // Update on input
+  document.addEventListener("input", function(ev) {{
+    if (ev.target && ev.target.classList && ev.target.classList.contains("cloze-input")
+        && ev.target.id.indexOf("{uniq}_slot_") === 0) {{
+      collect();
     }}
-    hidden.value = JSON.stringify(obj);
-  }}
+  }});
 
-  // Update on every keystroke/change
-  for (var i = 0; i < inputs.length; i++) {{
-    inputs[i].addEventListener("input", updateHidden);
-    inputs[i].addEventListener("change", updateHidden);
-  }}
-
-  // CRITICAL: update right before the form submits
+  // Ensure update right before submit (covers autofill)
   var form = root.closest("form");
   if (form) {{
     form.addEventListener("submit", function() {{
-      updateHidden();
+      collect();
     }});
   }}
 
-  // Set initial value so consistency passes even if user edits quickly
-  updateHidden();
+  // Initial populate
+  collect();
 }})();
 </script>
 """
 
-    # editor support (minimal)
-    @classmethod
-    def show_editbox(cls, template_helper, key, language):
-        if key == "name":
-            return '<input name="name" class="form-control" />'
-        if key == "text":
-            return '<textarea name="text" class="form-control" rows="6"></textarea>'
-        return ""
+        # Wrap in a bootstrap-ish container; INGInious templates expect raw HTML
+        return f"""
+<div class="cloze-problem">
+  <div class="cloze-text" style="line-height:2.2;">
+    {prompt_html}
+  </div>
+  {hidden}
+</div>
+{script}
+"""
 
-    @classmethod
-    def show_editbox_templates(cls, template_helper, key, language):
-        return ""
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+        """
+        Called by frontend BEFORE submission to validate required fields.
+        Must accept task_input as TaskInput object (normal) OR a dict (some flows).
+        """
+        pid = self.get_id()
+
+        # Read raw
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            raw = task_input.get(pid)
+
+        if raw is None or raw == "":
+            return False
+
+        # Must be JSON dict
+        try:
+            obj = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            return False
+
+        if not isinstance(obj, dict):
+            return False
+
+        # Must have all slots present and non-empty
+        text = (self._data or {}).get("text", "") or ""
+        slots = [m.group(1) for m in _TOKEN_RE.finditer(text)]
+        for s in slots:
+            v = obj.get(str(s), "")
+            if v is None or str(v).strip() == "":
+                return False
+
+        return True
