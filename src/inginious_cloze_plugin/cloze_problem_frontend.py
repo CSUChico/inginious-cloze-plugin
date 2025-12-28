@@ -81,3 +81,13 @@ class DisplayableClozeProblem(DisplayableProblem):
     @classmethod
     def show_editbox_templates(cls, template_helper, key, language):
         return ""
+
+    # Must exist (and match ABC expectation) or class stays abstract.
+    def check_answer(self, *args, **kwargs):
+        """
+        Frontend-side optional check. We don't do real grading here.
+        Just report "ok" and let the backend/container do the real grading.
+        """
+        # Some INGInious versions expect a tuple (success: bool, message: str)
+        return True, ""
+
