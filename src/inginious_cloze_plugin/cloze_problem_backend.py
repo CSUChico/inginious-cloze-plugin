@@ -1,24 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Backend (grading-side) Cloze problem for INGInious.
+Backend (grading) Cloze problem for INGInious 0.9.x.
 
-Key design for INGInious 0.9.x:
-- The frontend must submit ONE field per problem id, otherwise the platform's
-  consistency checks fail for custom problem types.
-- Therefore we submit a JSON string in the single field, and decode it here.
-
-Token syntax supported in the stem text:
-  {1:SHORTANSWER:=H2O|h2o}
-  {2:NUMERICAL:=100±0.5}
-  {3:NUMERICAL:=42}
-
-SHORTANSWER: case-insensitive exact match against any variant split by '|'
-NUMERICAL: float compare with optional tolerance '±'
+IMPORTANT: The MCQ agent expects problem.check_answer() to return FIVE values:
+  (is_valid, main_message, secondary_messages, mcq_error_count, state)
 """
 
 import json
 import re
-from inginious.common.tasks_problems import Problem
+
+from inginious.common.task_problems import Problem
 
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
@@ -29,86 +20,142 @@ class ClozeProblem(Problem):
         return "cloze"
 
     @classmethod
-    def get_text_fields(cls):
-        # allow teachers to edit/translate these
-        return ["name", "text"]
+    def get_type_name(cls, language):
+        return "Cloze"
 
-    @classmethod
-    def input_type(cls):
-        # IMPORTANT: must be a single value so INGInious can validate it.
-        # We'll receive a JSON string and decode it.
-        return "string"
+    def __init__(self, problemid, problem_content, translations, taskfs):
+        super().__init__(problemid, problem_content, translations, taskfs)
+        self._data = problem_content or {}
 
-    def _solutions(self):
-        """Parse expected answers out of self._data['text']."""
-        text = (self._data or {}).get("text", "") or ""
-        sol = {}
+    def _extract_raw_value(self, raw):
+        """Normalize INGInious inputs (string/list/dict) into a single string."""
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                s = self._extract_raw_value(item)
+                if str(s).strip():
+                    return s
+            return ""
+        if isinstance(raw, dict):
+            for k in ("value", "answer", "data", "raw"):
+                if k in raw:
+                    return self._extract_raw_value(raw.get(k))
+            try:
+                return json.dumps(raw)
+            except Exception:
+                return ""
+        return str(raw)
 
-        for slot, kind, rhs in _TOKEN_RE.findall(text):
-            rhs = rhs.strip()
-            if kind == "SHORTANSWER":
-                # multiple variants: A|B|C
-                variants = [s.strip() for s in rhs.split("|") if s.strip()]
-                sol[slot] = ("SHORTANSWER", variants)
-            else:
-                # NUMERICAL may have tolerance like "100±0.5"
-                tol = 0.0
-                base = rhs
-                if "±" in rhs:
-                    base, t = rhs.split("±", 1)
-                    base = base.strip()
-                    tol = float(t.strip())
-                sol[slot] = ("NUMERICAL", (float(base), tol))
+    def _get_problem_input_str(self, task_input):
+        pid = self.get_id()
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            # msg.inputdata is often a plain dict
+            raw = task_input.get(pid)
+        return self._extract_raw_value(raw).strip()
 
-        return sol
-
-    def input_is_consistent(self, value):
-        # Called by backend for safety; frontend also does its own checks.
-        return isinstance(value, str) and value.strip() != ""
-
-    def check_answer(self, value, seed):
-        """
-        value: JSON string like {"1":"H2O","2":"100"}
-        Return dict with success/message/score.
-        """
-        sols = self._solutions()
-
+    def _parse_student_answers(self, s):
+        """Hidden field should be JSON like {"1":"H2O","2":"50"}."""
+        if not s:
+            return {}
         try:
-            answers = json.loads(value) if isinstance(value, str) else {}
+            obj = json.loads(s)
+            if isinstance(obj, dict):
+                # normalize keys to strings
+                return {str(k): ("" if v is None else str(v)) for k, v in obj.items()}
         except Exception:
-            return {"success": False, "message": "Malformed submission.", "score": 0.0}
+            pass
+        return {}
 
-        if not isinstance(answers, dict):
-            return {"success": False, "message": "Malformed submission.", "score": 0.0}
+    def _expected_from_text(self):
+        """Return list of (slot, kind, expected_string)."""
+        text = (self._data or {}).get("text", "") or ""
+        out = []
+        for m in _TOKEN_RE.finditer(text):
+            slot = m.group(1)
+            kind = m.group(2)
+            expected = (m.group(3) or "").strip()
+            out.append((slot, kind, expected))
+        return out
 
-        # normalize keys to strings
-        answers = {str(k): ("" if v is None else str(v)) for k, v in answers.items()}
+    def _shortanswer_ok(self, student, expected):
+        # allow multiple options with |
+        options = [o.strip() for o in expected.split("|") if o.strip()]
+        s = (student or "").strip()
+        return any(s.lower() == o.lower() for o in options) if options else False
 
-        correct = 0
-        total = max(len(sols), 1)
-        per_blank = []
+    def _numerical_ok(self, student, expected):
+        options = [o.strip() for o in expected.split("|") if o.strip()]
+        try:
+            s_val = float((student or "").strip())
+        except Exception:
+            return False
 
-        for slot, (kind, rhs) in sols.items():
-            ans = (answers.get(slot) or "").strip()
-            ok = False
+        for opt in options:
+            try:
+                e_val = float(opt)
+            except Exception:
+                continue
+            # exact or very small tolerance
+            if abs(s_val - e_val) <= 1e-9:
+                return True
+        return False
+
+    def check_answer(self, task_input, language):
+        """
+        MUST return:
+          (is_valid, main_message, secondary_messages, mcq_error_count, state)
+        """
+        raw = self._get_problem_input_str(task_input)
+        answers = self._parse_student_answers(raw)
+        expected_items = self._expected_from_text()
+
+        secondary = []
+        errors = 0
+
+        if not expected_items:
+            # No tokens -> nothing to grade; treat as valid
+            return True, "", [], 0, {}
+
+        if not answers:
+            return (
+                False,
+                "Please answer all the questions.",
+                ["Your answers were not recorded correctly (empty submission)."],
+                1,
+                {},
+            )
+
+        for slot, kind, expected in expected_items:
+            student = (answers.get(str(slot), "") or "").strip()
+
+            if not student:
+                errors += 1
+                secondary.append(f"Blank {slot}: missing answer.")
+                continue
 
             if kind == "SHORTANSWER":
-                ok = any(ans.lower() == exp.lower() for exp in rhs)
-
+                ok = self._shortanswer_ok(student, expected)
             elif kind == "NUMERICAL":
-                try:
-                    x = float(ans)
-                    target, tol = rhs
-                    ok = abs(x - target) <= tol
-                except Exception:
-                    ok = False
+                ok = self._numerical_ok(student, expected)
+            else:
+                ok = False
 
-            correct += 1 if ok else 0
-            per_blank.append(f"{slot}:{'✓' if ok else '✗'}")
+            if not ok:
+                errors += 1
+                secondary.append(f"Blank {slot}: incorrect.")
 
-        score = correct / total
-        return {
-            "success": score == 1.0,
-            "message": "; ".join(per_blank),
-            "score": score,
-        }
+        is_valid = (errors == 0)
+        main = "Correct." if is_valid else "Some answers are incorrect."
+
+        # mcq_error_count: mcq agent uses this counter
+        mcq_error_count = errors
+
+        # state: can be anything JSON-serializable; keep empty
+        state = {}
+
+        return is_valid, main, secondary, mcq_error_count, state
