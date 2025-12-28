@@ -1,93 +1,128 @@
 # src/inginious_cloze_plugin/cloze_problem_frontend.py
-import html, re
-from inginious.frontend.task_problems import DisplayableProblem
+import html
+import re
 
+from inginious.frontend.task_problems import DisplayableProblem
+from .cloze_problem_backend import ClozeProblem
+
+# {slot:TYPE:=ANSWER}
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
-class DisplayableClozeProblem(DisplayableProblem):
+
+class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
+    """
+    Frontend (rendering + client-side packing).
+
+    We render multiple <input> fields but submit ONE hidden field named "{problem_id}"
+    that contains JSON like:
+      {"1":"H2O","2":"100"}
+    This matches backend input_type() == "string".
+    """
+
     @classmethod
-    def get_type(cls): 
+    def get_type(cls):
         return "cloze"
 
     @classmethod
-    def get_type_name(cls, language): 
+    def get_type_name(cls, language):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        super().__init__(problemid, problem_content, translations, task_fs)
-        # DisplayableProblem already stores problem_content; but keeping _data is fine if you rely on it:
+        DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
+        # ensure we keep YAML data available for show_input
         self._data = problem_content
 
-    # Webapp calls: problem.input_is_consistent(task_input, default_exts, default_max_size)
-    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
-        # We generate fields named: "<pid>__<slot>"
-        pid = self.get_id()
-        if hasattr(task_input, "get_problem_input"):
-            value = task_input.get_problem_input(pid)
-        else:
-            value = task_input.get(pid)
-
-        # "value" is often a dict prepared by the TaskInput layer; accept if dict-ish.
-        return isinstance(value, dict)
-
+    # --- required by DisplayableProblem/abstract base
     def get_text_fields(self):
-        return ["text", "name"]
+        return ["name", "text"]
 
     def input_type(self):
-        # IMPORTANT: tell TaskInput layer we want a dict
-        return "dict"
+        # IMPORTANT: must be a supported core type. We'll post JSON as a string.
+        return "string"
 
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
+        """
+        Called by the webapp before it accepts submission.
+        We must ensure the field exists and is non-empty.
+        """
+        pid = self.get_id()
+        raw = task_input.get_problem_input(pid)
+        return bool(raw and str(raw).strip())
+
+    def check_answer(self, task_input, language):
+        """
+        Optional "check" path; we don't do frontend checking.
+        Return (ok, message). Keep permissive.
+        """
+        return True, ""
+
+    # --- rendering
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
-        text = self._data.get("text", "")
+        text = self._data.get("text", "") or ""
+        title = html.escape(self._data.get("name", "Question") or "Question")
 
         parts = []
         last = 0
 
+        # Build inline inputs; we store answers into a single hidden JSON field (name=pid)
         for m in _TOKEN_RE.finditer(text):
             parts.append(html.escape(text[last:m.start()]))
 
-            slot = m.group(1)  # "1", "2", ...
-            # CRITICAL: use a naming convention the TaskInput builder can group into a dict
-            # Common safe pattern in INGInious plugins: "<pid>__<slot>"
-            input_name = f"{pid}__{slot}"
-
+            slot = m.group(1)
+            # visible input - NOT named for submission
             parts.append(
-                f'<input type="text" name="{html.escape(input_name)}" class="form-control" '
-                f'style="display:inline-block; width:12rem; margin:0 0.25rem;" />'
+                f'<input type="text" data-slot="{html.escape(slot)}" '
+                f'class="form-control cloze-input" '
+                f'style="display:inline-block; width:10rem; margin:0 0.25rem;" />'
             )
             last = m.end()
 
         parts.append(html.escape(text[last:]))
 
-        label = html.escape(self._data.get("name", "Question"))
+        # hidden field that INGInious will read as the single problem answer
+        # name MUST be pid
         return f"""
-            <div class="panel panel-default">
-              <div class="panel-heading">{label}</div>
-              <div class="panel-body" style="line-height:2.2;">
-                {''.join(parts)}
-              </div>
-            </div>
+        <div class="panel panel-default">
+          <div class="panel-heading">{title}</div>
+          <div class="panel-body" style="line-height:2.2;">
+            {''.join(parts)}
+            <input type="hidden" name="{html.escape(pid)}" id="{html.escape(pid)}" />
+          </div>
+        </div>
+
+        <script>
+          (function(){{
+            // Scope this script to the block that contains it
+            const root = document.currentScript.closest('.panel');
+            if(!root) return;
+
+            const hidden = root.querySelector('input[name="{pid}"]');
+            const inputs = root.querySelectorAll('.cloze-input');
+
+            function update(){{
+              const data = {{}};
+              inputs.forEach(i => {{
+                data[i.dataset.slot] = i.value || "";
+              }});
+              hidden.value = JSON.stringify(data);
+            }}
+
+            inputs.forEach(i => i.addEventListener('input', update));
+            update();
+          }})();
+        </script>
         """
 
+    # --- optional editor support (task editor)
     @classmethod
     def show_editbox(cls, template_helper, key, language):
+        if key == "name":
+            return '<input name="name" class="form-control" type="text" />'
         if key == "text":
             return '<textarea name="text" class="form-control" rows="6"></textarea>'
-        if key == "name":
-            return '<input name="name" class="form-control" />'
         return ""
 
     @classmethod
     def show_editbox_templates(cls, template_helper, key, language):
         return ""
-
-    # Must exist (and match ABC expectation) or class stays abstract.
-    def check_answer(self, *args, **kwargs):
-        """
-        Frontend-side optional check. We don't do real grading here.
-        Just report "ok" and let the backend/container do the real grading.
-        """
-        # Some INGInious versions expect a tuple (success: bool, message: str)
-        return True, ""
-
