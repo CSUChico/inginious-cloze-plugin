@@ -2,60 +2,55 @@
 import re
 from inginious.common.tasks_problems import Problem
 
-# Token format: {<slot>:(SHORTANSWER|NUMERICAL):=<rhs>}
 _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class ClozeProblem(Problem):
+    """
+    Backend/grading representation of the problem.
+    INGInious will instantiate this class in the grading container.
+    """
+
     @classmethod
     def get_type(cls):
         return "cloze"
 
     @classmethod
-    def get_type_name(cls, language):
-        return "Cloze"
+    def input_type(cls):
+        # We want a mapping: slot -> user answer
+        return "dict"
 
     @classmethod
     def get_text_fields(cls):
-        # allow teachers to edit/translate these
+        # Fields visible in editor / subject to translation if applicable
         return ["name", "text"]
-
-    @classmethod
-    def input_type(cls):
-        # We expect a dict mapping slot -> string, e.g. {"1": "H2O", "2": "100"}
-        return "dict"
 
     def _solutions(self):
         """
         Parse expected answers from self._data['text'].
-
-        SHORTANSWER supports multiple correct answers separated by |:
-            {1:SHORTANSWER:=H2O|h2o|water}
-
-        NUMERICAL supports optional tolerance with ±:
-            {2:NUMERICAL:=100±0.5}
-            {2:NUMERICAL:=100}
+        Supports:
+          {1:SHORTANSWER:=H2O}
+          {2:SHORTANSWER:=H2O|h2o|Water}
+          {3:NUMERICAL:=100}
+          {4:NUMERICAL:=100±0.5}
         """
         text = (self._data or {}).get("text", "") or ""
         sol = {}
-
         for slot, kind, rhs in _TOKEN_RE.findall(text):
             rhs = rhs.strip()
             if kind == "SHORTANSWER":
-                variants = [s.strip() for s in rhs.split("|") if s.strip()]
-                sol[slot] = ("SHORTANSWER", variants)
+                sol[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
             else:
                 tol = 0.0
-                base = rhs
+                val = rhs
                 if "±" in rhs:
                     base, t = rhs.split("±", 1)
-                    base = base.strip()
+                    val = base.strip()
                     tol = float(t.strip())
-                sol[slot] = ("NUMERICAL", (float(base), tol))
-
+                sol[slot] = ("NUMERICAL", (float(val), tol))
         return sol
 
     def input_is_consistent(self, value):
-        # Backend grading expects a dict of slot->string
+        # Grader receives what frontend submitted after normalization
         if not isinstance(value, dict):
             return False
         for k, v in value.items():
@@ -88,9 +83,12 @@ class ClozeProblem(Problem):
                 except Exception:
                     ok = False
 
-            if ok:
-                correct += 1
+            correct += 1 if ok else 0
             messages.append(f"{slot}: {'✓' if ok else '✗'}")
 
         score = correct / total
-        return {"success": score == 1.0, "message": "; ".join(messages), "score": score}
+        return {
+            "success": score == 1.0,
+            "message": "; ".join(messages),
+            "score": float(score),
+        }
