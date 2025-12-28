@@ -13,7 +13,7 @@ _TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     """
-    Displayable version of ClozeProblem for INGInious frontend (0.9.x).
+    Displayable version of ClozeProblem for INGInious frontend.
 
     - Renders visible blanks for tokens in "text"
     - Stores all answers into ONE hidden field named by problem id as JSON:
@@ -22,21 +22,15 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     # ---- DisplayableProblem abstract requirements ----
 
-    @property
     def input_type(self):
-        # Used by the task editor UI; "text" is safe/neutral here.
-        return "text"
+        # IMPORTANT: must be a METHOD in your INGInious version (they call input_type()).
+        # Return list (type object) if your problem submits multiple fields; we submit one JSON string.
+        return str
 
     def get_text_fields(self):
-        # Editor/export: which fields contain text
         return ["text"]
 
     def show_editbox_templates(self, template_helper, language):
-        """
-        Return templates for the task editor (problem creation UI).
-        Minimal implementation: provide a default skeleton.
-        """
-        # Key is template name, value is YAML snippet (string)
         return {
             "Cloze (basic)": (
                 "type: cloze\n"
@@ -46,10 +40,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         }
 
     def show_editbox(self, template_helper, language, seed):
-        """
-        Render the edit box shown in task editor.
-        Minimal: just a textarea bound to 'text'.
-        """
         pid = self.get_id()
         text = (self._data or {}).get("text", "") or ""
         return f"""
@@ -66,7 +56,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     # -------------------------------------------------
 
     def __init__(self, problemid, problem_content, translations, taskfs):
-        # ClozeProblem calls the correct base Problem.__init__(..., translations, taskfs)
         super().__init__(problemid, problem_content, translations, taskfs)
 
     @classmethod
@@ -107,9 +96,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "".join(parts)
 
     def show_input(self, template_helper, language, seed):
-        """
-        Render student-facing input.
-        """
         data = self._data or {}
         text = data.get("text", "") or ""
 
@@ -118,7 +104,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
         prompt_html = self._render_prompt_with_inputs(text, uniq)
 
-        # The *only* submitted field for this problem:
         hidden = (
             f'<input type="hidden" name="{html.escape(pid)}" '
             f'id="{uniq}_json" value="{html.escape(json.dumps({}))}">'
@@ -170,10 +155,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 """
 
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
-        """
-        Frontend pre-submit validation.
-        Must handle TaskInput object OR dict-like (some paths).
-        """
         pid = self.get_id()
 
         if hasattr(task_input, "get_problem_input"):
