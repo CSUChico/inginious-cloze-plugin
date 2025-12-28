@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Frontend (webapp/UI) Cloze problem for INGInious.
+Frontend (webapp/UI) Cloze problem for INGInious 0.9.x.
 
-IMPORTANT (INGInious 0.9.x):
-- Custom problems must submit ONE field per problem id.
-- We render multiple visible blanks for the student, but maintain a single hidden
-  <input name="<problemid>"> containing JSON of all blank values.
-- This satisfies INGInious' frontend validation and removes the red banner.
-
-Token syntax supported:
-  {1:SHORTANSWER:=H2O|h2o}
-  {2:NUMERICAL:=100±0.5}
+- Renders multiple visible blanks.
+- Submits ONE hidden input named <problemid> containing JSON of all blank values.
+- Forces hidden field update on input AND on form submit.
+- input_is_consistent() accepts string/list/dict shapes returned by INGInious.
 """
 
 import html
+import json
 import re
 
 from inginious.frontend.task_problems import DisplayableProblem
@@ -32,36 +28,53 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return "Cloze"
 
     def __init__(self, problemid, problem_content, translations, task_fs):
-        # DisplayableProblem's init wires translations + task fs and stores data
         DisplayableProblem.__init__(self, problemid, problem_content, translations, task_fs)
-
-        # Ensure both sides have access to the YAML dict in the same attribute name.
-        # (Some INGInious classes use _data; we make sure it's always set.)
+        # Make sure _data always exists (several places expect it)
         self._data = problem_content or {}
 
-    # ===== Required by INGInious frontend plumbing =====
-
+    # INGInious expects a single field for custom types to pass consistency checks
     def input_type(self):
-        # Must be a single string field so platform validation works.
         return "string"
 
-    def get_text_fields(self):
-        return ["name", "text"]
+    def _extract_raw_value(self, raw):
+        """
+        INGInious 0.9.x may provide:
+          - string
+          - list of strings
+          - dict-like payloads in some paths
+        Normalize to a single string (or "").
+        """
+        if raw is None:
+            return ""
 
-    def check_answer(self, task_input, language):
-        """
-        Optional quick-check hook; keep permissive.
-        Real grading happens in backend container evaluation.
-        """
-        return True, ""
+        # Most common: already a string
+        if isinstance(raw, str):
+            return raw
+
+        # Sometimes: list (take first non-empty)
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                s = self._extract_raw_value(item)
+                if str(s).strip():
+                    return s
+            return ""
+
+        # Sometimes: dict-ish
+        if isinstance(raw, dict):
+            # try typical keys
+            for k in ("value", "answer", "data", "raw"):
+                if k in raw:
+                    return self._extract_raw_value(raw.get(k))
+            # fallback: JSON dump (at least non-empty)
+            try:
+                return json.dumps(raw)
+            except Exception:
+                return ""
+
+        # fallback
+        return str(raw)
 
     def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
-        """
-        INGInious calls this with (task_input, allowed_exts, max_size).
-
-        task_input may be a TaskInput-like object OR a raw dict, depending on code path.
-        We consider consistent if the single hidden field for this problem is non-empty.
-        """
         pid = self.get_id()
 
         if hasattr(task_input, "get_problem_input"):
@@ -69,27 +82,22 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         else:
             raw = task_input.get(pid)
 
-        return bool(raw and str(raw).strip())
-
-    # ===== Rendering =====
+        s = self._extract_raw_value(raw).strip()
+        return bool(s)
 
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
-        data = getattr(self, "_data", {}) or {}
-        text = data.get("text", "") or ""
+        text = (self._data or {}).get("text", "") or ""
+        label = html.escape((self._data or {}).get("name", "Question") or "Question")
 
         parts = []
         last = 0
-        slots = []
 
         for m in _TOKEN_RE.finditer(text):
             parts.append(html.escape(text[last:m.start()]))
 
             slot = m.group(1)
-            slots.append(slot)
-
-            # visible blank - NO name attribute!
-            # (We only submit via the hidden JSON field named pid.)
+            # Visible inputs have NO name attribute (we only submit the hidden one).
             parts.append(
                 f'<input type="text" class="form-control cloze-input" '
                 f'data-slot="{html.escape(slot)}" '
@@ -99,44 +107,57 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
         parts.append(html.escape(text[last:]))
 
-        label = html.escape(data.get("name", "Question"))
+        # Use a unique DOM id so multiple cloze problems on a page don't collide
+        root_id = f"cloze-root-{pid}"
 
-        # One hidden field that will be submitted as the problem answer
-        # hidden[name=pid] must exist for INGInious consistency checks to pass.
         return f"""
-<div class="panel panel-default">
+<div class="panel panel-default" id="{html.escape(root_id)}">
   <div class="panel-heading">{label}</div>
   <div class="panel-body" style="line-height:2.2;">
     {''.join(parts)}
-    <input type="hidden" name="{html.escape(pid)}" id="{html.escape(pid)}" />
+    <input type="hidden" name="{html.escape(pid)}" id="cloze-hidden-{html.escape(pid)}" />
   </div>
 </div>
 
 <script>
-(function(){{
-  // Find the panel body that contains this script tag
-  const root = document.currentScript.closest('.panel');
+(function() {{
+  // Find our container deterministically
+  var root = document.getElementById("{root_id}");
   if (!root) return;
 
-  const hidden = root.querySelector('input[type="hidden"][name="{pid}"]');
-  const inputs = root.querySelectorAll('input.cloze-input');
+  var hidden = root.querySelector('input[type="hidden"][name="{pid}"]');
+  var inputs = root.querySelectorAll('input.cloze-input');
 
-  function updateHidden(){{
-    const obj = {{}};
-    inputs.forEach((inp) => {{
-      obj[inp.dataset.slot] = inp.value || "";
-    }});
+  function updateHidden() {{
+    var obj = {{}};
+    for (var i = 0; i < inputs.length; i++) {{
+      var inp = inputs[i];
+      obj[inp.getAttribute("data-slot")] = inp.value || "";
+    }}
     hidden.value = JSON.stringify(obj);
   }}
 
-  inputs.forEach((inp) => inp.addEventListener("input", updateHidden));
+  // Update on every keystroke/change
+  for (var i = 0; i < inputs.length; i++) {{
+    inputs[i].addEventListener("input", updateHidden);
+    inputs[i].addEventListener("change", updateHidden);
+  }}
+
+  // CRITICAL: update right before the form submits
+  var form = root.closest("form");
+  if (form) {{
+    form.addEventListener("submit", function() {{
+      updateHidden();
+    }});
+  }}
+
+  // Set initial value so consistency passes even if user edits quickly
   updateHidden();
 }})();
 </script>
 """
 
-    # ===== Optional editor support (can be minimal) =====
-
+    # editor support (minimal)
     @classmethod
     def show_editbox(cls, template_helper, key, language):
         if key == "name":
