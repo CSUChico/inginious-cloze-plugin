@@ -56,23 +56,28 @@ class ClozeProblem(Problem):
 
         return sol
 
-    def input_is_consistent(self, value):
+    def input_is_consistent(self, task_input, default_allowed_extension=None, default_max_size=None):
         """
-        value should be a JSON string representing a dict slot->answer.
+        Called by the webapp before it accepts submission.
+        task_input can be either:
+          - a TaskInput-like object with get_problem_input(pid)
+          - a plain dict of submitted fields
         """
-        if not isinstance(value, str):
-            return False
-        value = value.strip()
-        if not value:
-            return False
-        try:
-            obj = json.loads(value)
-        except Exception:
-            return False
-        if not isinstance(obj, dict):
-            return False
-        # keys and values should be strings
-        return all(isinstance(k, str) and isinstance(v, str) for k, v in obj.items())
+        pid = self.get_id()
+    
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            # plain dict case
+            raw = task_input.get(pid)
+    
+            # sometimes INGInious stores fields under their HTML names;
+            # for safety, also try stringified pid
+            if raw is None:
+                raw = task_input.get(str(pid))
+    
+        return bool(raw and str(raw).strip())
+
 
     def check_answer(self, value, seed):
         """
