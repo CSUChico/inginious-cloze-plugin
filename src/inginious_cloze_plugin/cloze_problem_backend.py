@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 from typing import Any
 
 try:
@@ -225,7 +226,10 @@ def select_variant_index(problem_content: Any, task_fs: Any = None, seed: str | 
 def build_variant(problem_content: Any, task_fs: Any = None, seed: str | None = None,
                   submitted_variant: Any = None) -> dict[str, Any]:
     variants = load_variants(problem_content, task_fs)
-    index = select_variant_index(problem_content, task_fs, seed=seed, submitted_variant=submitted_variant)
+    if submitted_variant in (None, "") and seed is None:
+        index = secrets.randbelow(len(variants)) if variants else 0
+    else:
+        index = select_variant_index(problem_content, task_fs, seed=seed, submitted_variant=submitted_variant)
     variant = dict(variants[index])
     variant["index"] = index
     variant["slots"] = expected_slots_from_text(variant["text"])
