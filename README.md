@@ -1,6 +1,6 @@
 # INGInious Cloze Plugin
 
-A pip-installable plugin for INGInious that adds a Moodle Cloze-style question type with a Task Editor tab for authoring.
+A pip-installable plugin for INGInious that adds a Moodle-style cloze question type and, on the `clozeenvironment` branch, a dedicated `cloze` grading environment for per-blank partial credit.
 
 ## Installation
 
@@ -16,6 +16,22 @@ plugins:
 ```
 
 Restart INGInious webapp and MCQ agent.
+
+## Dedicated cloze environment
+
+The `clozeenvironment` branch also defines a frontend environment type named `cloze` plus a matching agent entry point:
+
+```bash
+inginious-cloze-agent --backend tcp://127.0.0.1:2000 --tasks-dir /var/www/inginious
+```
+
+When a task uses the `cloze` environment type, the custom cloze agent computes the grade as:
+
+```txt
+100 * (correct blanks / total blanks)
+```
+
+instead of the MCQ environment's all-or-nothing subproblem scoring.
 
 ## Task configuration
 
@@ -51,6 +67,8 @@ problems:
 ```
 
 The selected variant is sent back with the submission, so the backend grades against the same problem text the student saw.
+
+For the dedicated `cloze` environment, keep the task's subproblems as `type: cloze` and switch the Environment tab from `mcq` to `cloze`.
 
 ## Development
 

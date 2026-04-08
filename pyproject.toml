@@ -10,6 +10,9 @@ readme = "README.md"
 requires-python = ">=3.8"
 authors = [{name="Your Name", email="you@example.com"}]
 
+[project.scripts]
+inginious-cloze-agent = "inginious_cloze_plugin.agent_cloze:main"
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = { find = { where = ["src"] } }

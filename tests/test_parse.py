@@ -3,6 +3,7 @@ import sys
 sys.path.insert(0, "src")
 
 import inginious_cloze_plugin
+from inginious_cloze_plugin.cloze_agent import grade_cloze_problem, parse_submission_payload
 from inginious_cloze_plugin.cloze_core import (
     build_variant_record,
     grade_answers,
@@ -121,6 +122,37 @@ def test_grade_answers_reports_fractional_score():
     result = grade_answers(solutions, {"1": "paris", "2": "5"})
 
     assert result == {"correct": 1, "total": 2, "errors": 1, "valid": False, "score": 0.5}
+
+
+def test_parse_submission_payload_reads_hidden_json():
+    answers = parse_submission_payload('{"__variant":"1","1":"Paris","2":"4"}')
+
+    assert answers == {"__variant": "1", "1": "Paris", "2": "4"}
+
+
+def test_grade_cloze_problem_returns_fractional_result():
+    task_fs = DummyTaskFS({
+        "variants.json": """
+        [
+          {"text": "water={1:SHORTANSWER:=H2O|h2o} and 2+2={2:NUMERICAL:=4}"}
+        ]
+        """
+    })
+
+    result = grade_cloze_problem(
+        {"type": "cloze", "variants_file": "variants.json"},
+        task_fs,
+        '{"__variant":"0","1":"H2O","2":"5"}',
+    )
+
+    assert result == {
+        "status": "failed",
+        "message": "Some answers are incorrect. You got 1/2 blanks right.",
+        "variant": 0,
+        "correct": 1,
+        "total": 2,
+        "score": 0.5,
+    }
 
 
 def test_cloze_problem_check_answer_uses_variant_from_submission():
