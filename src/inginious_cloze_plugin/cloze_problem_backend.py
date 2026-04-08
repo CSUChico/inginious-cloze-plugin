@@ -192,7 +192,7 @@ class ClozeProblem(Problem):
 
     @classmethod
     def get_text_fields(cls):
-        return {"name": True, "text": True}
+        return {"name": True, "text": True, "variants_file": True}
 
     def __init__(self, problemid, problem_content, translations, taskfs):
         super().__init__(problemid, problem_content, translations, taskfs)
@@ -204,7 +204,8 @@ class ClozeProblem(Problem):
         data = _coerce_problem_mapping(problem_content)
         if isinstance(data.get("variants"), str):
             data["variants"] = json.loads(data["variants"])
-        load_variants(data, taskfs)
+        if taskfs is not None or data.get("variants"):
+            load_variants(data, taskfs)
         return data
 
     def _extract_raw_value(self, raw):

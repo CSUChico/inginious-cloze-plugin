@@ -28,7 +28,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return str
 
     def get_text_fields(self):
-        return ["text"]
+        return ["name", "text", "variants_file"]
 
     def show_editbox_templates(self, template_helper, language):
         return {
@@ -46,9 +46,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         if key == "text":
             return '<textarea name="text" class="form-control" rows="8"></textarea>'
         if key == "variants_file":
-            return '<input type="text" name="variants_file" class="form-control" />'
-        if key == "variants":
-            return '<textarea name="variants" class="form-control" rows="10"></textarea>'
+            return (
+                '<input type="text" name="variants_file" class="form-control" '
+                'placeholder="cloze_variants.json" />'
+                '<p class="help-block">Optional task file containing a JSON variants list.</p>'
+            )
         return ""
 
     def __init__(self, problemid, problem_content, translations, taskfs):
