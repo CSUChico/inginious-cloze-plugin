@@ -364,9 +364,15 @@ class ClozeProblem(Problem):
         result = grade_answers(variant["solutions"], answers)
 
         if result["valid"]:
-            return True, "Correct.", [], 0, {"variant": variant["index"]}
+            return True, "Correct. You got {}/{} blanks right.".format(result["correct"], result["total"]), [], 0, {
+                "variant": variant["index"],
+                "correct": result["correct"],
+                "total": result["total"],
+            }
 
-        main = "Please answer all the questions." if not answers else "Some answers are incorrect."
+        main = "Please answer all the questions." if not answers else (
+            "Some answers are incorrect. You got {}/{} blanks right.".format(result["correct"], result["total"])
+        )
         secondary = []
         for slot in variant["slots"]:
             answer = (answers.get(slot) or "").strip()
@@ -377,4 +383,8 @@ class ClozeProblem(Problem):
             if not slot_result["valid"]:
                 secondary.append("Blank {}: incorrect.".format(slot))
 
-        return False, main, secondary, result["errors"], {"variant": variant["index"]}
+        return False, main, secondary, result["errors"], {
+            "variant": variant["index"],
+            "correct": result["correct"],
+            "total": result["total"],
+        }
