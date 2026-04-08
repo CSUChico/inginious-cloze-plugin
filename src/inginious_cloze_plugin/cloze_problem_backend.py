@@ -91,6 +91,32 @@ def _read_task_file(task_fs: Any, path: str) -> str:
     if task_fs is None:
         raise ValueError("A variants_file was configured but no task filesystem is available.")
 
+    for method_name in ("get",):
+        method = getattr(task_fs, method_name, None)
+        if callable(method):
+            try:
+                data = method(path)
+                if hasattr(data, "read"):
+                    data = data.read()
+                return data.decode("utf-8") if isinstance(data, bytes) else str(data)
+            except Exception:
+                pass
+
+    for method_name in ("get_fd",):
+        method = getattr(task_fs, method_name, None)
+        if callable(method):
+            try:
+                handle = method(path)
+                try:
+                    data = handle.read()
+                finally:
+                    close = getattr(handle, "close", None)
+                    if callable(close):
+                        close()
+                return data.decode("utf-8") if isinstance(data, bytes) else str(data)
+            except Exception:
+                pass
+
     for method_name in ("read", "read_file", "get_content"):
         method = getattr(task_fs, method_name, None)
         if callable(method):
