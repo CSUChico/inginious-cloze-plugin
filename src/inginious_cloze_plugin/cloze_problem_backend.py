@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from typing import Any
 
@@ -98,6 +99,33 @@ def _read_task_file(task_fs: Any, path: str) -> str:
 
     if hasattr(task_fs, "open"):
         with task_fs.open(path, "r") as handle:
+            return handle.read()
+
+    for method_name in ("get_path", "get_absolute_path", "realpath"):
+        method = getattr(task_fs, method_name, None)
+        if callable(method):
+            file_path = method(path)
+            with open(file_path, "r", encoding="utf-8") as handle:
+                return handle.read()
+
+    root_path = None
+    for attr_name in ("path", "root", "root_path", "_path", "_root", "_root_path"):
+        candidate = getattr(task_fs, attr_name, None)
+        if isinstance(candidate, str) and candidate:
+            root_path = candidate
+            break
+
+    if root_path is not None:
+        with open(os.path.join(root_path, path), "r", encoding="utf-8") as handle:
+            return handle.read()
+
+    if isinstance(task_fs, str):
+        with open(os.path.join(task_fs, path), "r", encoding="utf-8") as handle:
+            return handle.read()
+
+    fspath = getattr(task_fs, "__fspath__", None)
+    if callable(fspath):
+        with open(os.path.join(os.fspath(task_fs), path), "r", encoding="utf-8") as handle:
             return handle.read()
 
     raise ValueError("Task filesystem does not expose a readable API for variants_file.")
