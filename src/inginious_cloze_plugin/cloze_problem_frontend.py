@@ -41,17 +41,28 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     @classmethod
     def show_editbox(cls, template_helper, key, language):
-        if key == "name":
-            return '<input type="text" name="name" class="form-control" />'
-        if key == "text":
-            return '<textarea name="text" class="form-control" rows="8"></textarea>'
-        if key == "variants_file":
-            return (
-                '<input type="text" name="variants_file" class="form-control" '
-                'placeholder="cloze_variants.json" />'
-                '<p class="help-block">Optional task file containing a JSON variants list.</p>'
-            )
-        return ""
+        if key != "cloze":
+            return ""
+        return """
+<div class="form-group row">
+  <label for="text-PID" class="col-sm-2 control-label">Text</label>
+  <div class="col-sm-10">
+    <textarea class="form-control" id="text-PID" name="problem[PID][text]" rows="8"
+              placeholder="Example: The capital of France is {1:SHORTANSWER:=Paris}."></textarea>
+    <p class="help-block">
+      Use tokens like <code>{1:SHORTANSWER:=H2O}</code> or <code>{2:NUMERICAL:=100}</code>.
+    </p>
+  </div>
+</div>
+<div class="form-group row">
+  <label for="variants-file-PID" class="col-sm-2 control-label">Variants file</label>
+  <div class="col-sm-10">
+    <input type="text" class="form-control" id="variants-file-PID" name="problem[PID][variants_file]"
+           placeholder="cloze_variants.json" />
+    <p class="help-block">Optional task file containing a JSON variants list for randomized prompts.</p>
+  </div>
+</div>
+"""
 
     def __init__(self, problemid, problem_content, translations, taskfs):
         ClozeProblem.__init__(self, problemid, problem_content, translations, taskfs)
