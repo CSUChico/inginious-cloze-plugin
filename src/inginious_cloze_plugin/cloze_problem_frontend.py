@@ -39,48 +39,17 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             )
         }
 
-    def show_editbox(self, template_helper, language, seed):
-        pid = self.get_id()
-        data = self._data or {}
-        text = data.get("text", "") or ""
-        name = data.get("name", "") or ""
-        variants_file = data.get("variants_file", "") or ""
-        variants = data.get("variants")
-        variants_text = ""
-        if variants:
-            variants_text = json.dumps(variants, indent=2)
-
-        return """
-<div class="form-group">
-  <label for="cloze_name_{pid}">Name</label>
-  <input class="form-control" id="cloze_name_{pid}" name="problems[{pid}][name]" value="{name}">
-</div>
-<div class="form-group">
-  <label for="cloze_text_{pid}">Default cloze text</label>
-  <textarea class="form-control" id="cloze_text_{pid}"
-            name="problems[{pid}][text]" rows="8">{text}</textarea>
-  <p class="help-block">
-    Use tokens like <code>{{1:SHORTANSWER:=H2O}}</code> or <code>{{2:NUMERICAL:=100}}</code>.
-  </p>
-</div>
-<div class="form-group">
-  <label for="cloze_variants_file_{pid}">Variants file (optional)</label>
-  <input class="form-control" id="cloze_variants_file_{pid}"
-         name="problems[{pid}][variants_file]" value="{variants_file}">
-  <p class="help-block">Path to a JSON file containing a list of cloze variants.</p>
-</div>
-<div class="form-group">
-  <label for="cloze_variants_{pid}">Inline variants JSON (optional)</label>
-  <textarea class="form-control" id="cloze_variants_{pid}"
-            name="problems[{pid}][variants]" rows="10">{variants_text}</textarea>
-</div>
-""".format(
-            pid=html.escape(pid),
-            name=html.escape(name),
-            text=html.escape(text),
-            variants_file=html.escape(variants_file),
-            variants_text=html.escape(variants_text),
-        )
+    @classmethod
+    def show_editbox(cls, template_helper, key, language):
+        if key == "name":
+            return '<input type="text" name="name" class="form-control" />'
+        if key == "text":
+            return '<textarea name="text" class="form-control" rows="8"></textarea>'
+        if key == "variants_file":
+            return '<input type="text" name="variants_file" class="form-control" />'
+        if key == "variants":
+            return '<textarea name="variants" class="form-control" rows="10"></textarea>'
+        return ""
 
     def __init__(self, problemid, problem_content, translations, taskfs):
         ClozeProblem.__init__(self, problemid, problem_content, translations, taskfs)
