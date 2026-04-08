@@ -6,7 +6,11 @@ from .cloze_problem_frontend import DisplayableClozeProblem  # noqa: F401
 
 
 def init(plugin_manager, course_factory, client, entry):
-    register_env_type = getattr(plugin_manager, "register_env_type", None)
+    try:
+        from inginious.frontend.environment_types import register_env_type
+    except Exception:
+        register_env_type = getattr(plugin_manager, "register_env_type", None)
+
     if callable(register_env_type):
         register_env_type(ClozeFrontendEnv())
     return

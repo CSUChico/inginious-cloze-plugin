@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 
 try:
     import zmq.asyncio
@@ -37,7 +38,7 @@ def main(argv=None):
     local_fs_provider = _load_local_fs_provider()
     context = zmq.asyncio.Context()
     agent = ClozeAgent(context, args.backend, args.name, args.concurrency, local_fs_provider(args.tasks_dir))
-    agent.run()
+    asyncio.run(agent.run())
 
 
 if __name__ == "__main__":  # pragma: no cover
