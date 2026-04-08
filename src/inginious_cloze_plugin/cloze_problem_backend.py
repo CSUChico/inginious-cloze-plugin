@@ -207,8 +207,8 @@ class ClozeProblem(Problem):
         data.setdefault("variants_file", "")
         if isinstance(data.get("variants"), str):
             data["variants"] = json.loads(data["variants"])
-        if taskfs is not None or data.get("variants"):
-            load_variants(data, taskfs)
+        if data.get("variants"):
+            load_variants({"variants": data.get("variants")}, taskfs)
         return data
 
     def _extract_raw_value(self, raw):
