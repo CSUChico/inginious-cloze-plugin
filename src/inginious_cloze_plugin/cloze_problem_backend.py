@@ -202,6 +202,9 @@ class ClozeProblem(Problem):
     @classmethod
     def parse_problem(cls, problem_content, taskfs=None):
         data = _coerce_problem_mapping(problem_content)
+        data.setdefault("name", "")
+        data.setdefault("text", "")
+        data.setdefault("variants_file", "")
         if isinstance(data.get("variants"), str):
             data["variants"] = json.loads(data["variants"])
         if taskfs is not None or data.get("variants"):
