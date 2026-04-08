@@ -196,14 +196,15 @@ class ClozeProblem(Problem):
 
     def __init__(self, problemid, problem_content, translations, taskfs):
         super().__init__(problemid, problem_content, translations, taskfs)
-        self._data = self.parse_problem(problem_content or {})
+        self._data = self.parse_problem(problem_content or {}, taskfs)
         self._task_fs = taskfs
 
-    def parse_problem(self, problem_content):
+    @classmethod
+    def parse_problem(cls, problem_content, taskfs=None):
         data = _coerce_problem_mapping(problem_content)
         if isinstance(data.get("variants"), str):
             data["variants"] = json.loads(data["variants"])
-        load_variants(data, getattr(self, "_task_fs", None))
+        load_variants(data, taskfs)
         return data
 
     def _extract_raw_value(self, raw):
