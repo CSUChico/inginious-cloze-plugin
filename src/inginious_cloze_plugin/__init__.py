@@ -35,6 +35,11 @@ def _start_cloze_agent(client, course_factory):
     if context is None or backend_addr is None or tasks_fs is None:
         return
 
+    # The frontend client speaks to the backend on the client socket. Agents must connect
+    # to the agent socket instead.
+    if backend_addr == "inproc://backend_client":
+        backend_addr = "inproc://backend_agent"
+
     # Avoid starting duplicate agents when the plugin is initialized multiple times in one process.
     if any(not task.done() for task in _AGENT_TASKS):
         return
