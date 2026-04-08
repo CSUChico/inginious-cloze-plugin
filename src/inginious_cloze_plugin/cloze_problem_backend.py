@@ -98,10 +98,28 @@ def _read_task_file(task_fs: Any, path: str) -> str:
             return data.decode("utf-8") if isinstance(data, bytes) else str(data)
 
     if hasattr(task_fs, "open"):
-        with task_fs.open(path, "r") as handle:
-            return handle.read()
+        for mode in ("r", "rt", "rb"):
+            try:
+                with task_fs.open(path, mode) as handle:
+                    data = handle.read()
+                    return data.decode("utf-8") if isinstance(data, bytes) else str(data)
+            except Exception:
+                pass
 
-    for method_name in ("get_path", "get_absolute_path", "realpath"):
+    for method_name in ("opentext", "open_text"):
+        method = getattr(task_fs, method_name, None)
+        if callable(method):
+            with method(path) as handle:
+                return handle.read()
+
+    for method_name in ("openbin", "open_bin"):
+        method = getattr(task_fs, method_name, None)
+        if callable(method):
+            with method(path) as handle:
+                data = handle.read()
+                return data.decode("utf-8") if isinstance(data, bytes) else str(data)
+
+    for method_name in ("get_path", "get_absolute_path", "realpath", "getsyspath", "get_sys_path"):
         method = getattr(task_fs, method_name, None)
         if callable(method):
             file_path = method(path)
@@ -109,7 +127,9 @@ def _read_task_file(task_fs: Any, path: str) -> str:
                 return handle.read()
 
     root_path = None
-    for attr_name in ("path", "root", "root_path", "_path", "_root", "_root_path"):
+    for attr_name in (
+        "path", "root", "root_path", "base_path", "_path", "_root", "_root_path", "_folder", "_dir"
+    ):
         candidate = getattr(task_fs, attr_name, None)
         if isinstance(candidate, str) and candidate:
             root_path = candidate
@@ -128,7 +148,13 @@ def _read_task_file(task_fs: Any, path: str) -> str:
         with open(os.path.join(os.fspath(task_fs), path), "r", encoding="utf-8") as handle:
             return handle.read()
 
-    raise ValueError("Task filesystem does not expose a readable API for variants_file.")
+    raise ValueError(
+        "Task filesystem does not expose a readable API for variants_file "
+        "(task_fs_type={}, available_attrs={}).".format(
+            type(task_fs).__name__,
+            ", ".join(sorted(name for name in dir(task_fs) if not name.startswith("__")))
+        )
+    )
 
 
 def load_variants(problem_content: Any, task_fs: Any = None) -> list[dict[str, Any]]:
