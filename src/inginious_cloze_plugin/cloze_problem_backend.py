@@ -7,13 +7,13 @@ import re
 from typing import Any
 
 try:
-    from inginious.common.tasks_problems import Problem
-except ModuleNotFoundError:  # pragma: no cover - enables local tests without INGInious installed
+    from inginious.frontend.task_problems import Problem
+except ModuleNotFoundError:  # pragma: no cover - local tests without INGInious
     class Problem(object):
-        def __init__(self, problemid=None, problem_content=None, translations=None, task_fs=None):
+        def __init__(self, problemid=None, problem_content=None, translations=None, taskfs=None):
             self._id = problemid
             self._data = problem_content or {}
-            self._task_fs = task_fs
+            self._task_fs = taskfs
 
         def get_id(self):
             return self._id
@@ -187,37 +187,109 @@ class ClozeProblem(Problem):
         return "cloze"
 
     @classmethod
-    def input_type(cls):
-        return dict
+    def get_type_name(cls, language):
+        return "Cloze"
 
     @classmethod
     def get_text_fields(cls):
         return {"name": True, "text": True}
 
+    def __init__(self, problemid, problem_content, translations, taskfs):
+        super().__init__(problemid, problem_content, translations, taskfs)
+        self._data = self.parse_problem(problem_content or {})
+        self._task_fs = taskfs
+
     def parse_problem(self, problem_content):
         data = _coerce_problem_mapping(problem_content)
         if isinstance(data.get("variants"), str):
             data["variants"] = json.loads(data["variants"])
-
-        # Validate eagerly so bad task data fails when loaded, not during student attempts.
         load_variants(data, getattr(self, "_task_fs", None))
         return data
 
-    def _current_variant(self, seed=None, value=None):
-        submitted_variant = None
-        if isinstance(value, dict):
-            submitted_variant = value.get("__variant")
-        return build_variant(self._data, getattr(self, "_task_fs", None), seed=seed, submitted_variant=submitted_variant)
+    def _extract_raw_value(self, raw):
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (list, tuple)):
+            for item in raw:
+                value = self._extract_raw_value(item)
+                if str(value).strip():
+                    return value
+            return ""
+        if isinstance(raw, dict):
+            if "__variant" in raw:
+                return json.dumps(raw)
+            for key in ("value", "answer", "data", "raw"):
+                if key in raw:
+                    return self._extract_raw_value(raw.get(key))
+            try:
+                return json.dumps(raw)
+            except Exception:
+                return ""
+        return str(raw)
+
+    def _get_problem_input_str(self, task_input):
+        pid = self.get_id()
+        if hasattr(task_input, "get_problem_input"):
+            raw = task_input.get_problem_input(pid)
+        else:
+            raw = task_input.get(pid) if isinstance(task_input, dict) else None
+        return self._extract_raw_value(raw).strip()
+
+    def _parse_student_answers(self, raw_value):
+        if not raw_value:
+            return {}
+        if isinstance(raw_value, dict):
+            return {str(k): ("" if v is None else str(v)) for k, v in raw_value.items()}
+        try:
+            parsed = json.loads(raw_value)
+            if isinstance(parsed, dict):
+                return {str(k): ("" if v is None else str(v)) for k, v in parsed.items()}
+        except Exception:
+            pass
+        return {}
+
+    def _current_variant(self, task_input=None, seed=None):
+        answers = {}
+        if isinstance(task_input, dict) and "__variant" in task_input:
+            answers = task_input
+        else:
+            answers = self._parse_student_answers(self._get_problem_input_str(task_input))
+
+        return build_variant(
+            self._data,
+            self._task_fs,
+            seed=seed,
+            submitted_variant=answers.get("__variant"),
+        )
 
     def input_is_consistent(self, value):
-        if not isinstance(value, dict):
+        answers = value if isinstance(value, dict) else self._parse_student_answers(self._get_problem_input_str(value))
+        if not isinstance(answers, dict):
             return False
-        variant = self._current_variant(value=value)
-        return all(isinstance(value.get(slot, ""), str) for slot in variant["slots"])
+        variant = self._current_variant(answers)
+        return all(isinstance(answers.get(slot, ""), str) and answers.get(slot, "").strip() for slot in variant["slots"])
 
-    def check_answer(self, value, language):
-        variant = self._current_variant(value=value)
-        result = grade_answers(variant["solutions"], value)
+    def check_answer(self, task_input, language):
+        answers = task_input if isinstance(task_input, dict) and "__variant" in task_input else self._parse_student_answers(
+            self._get_problem_input_str(task_input)
+        )
+        variant = self._current_variant(answers)
+        result = grade_answers(variant["solutions"], answers)
+
         if result["valid"]:
-            return True, "", "", 0
-        return False, "", "One or more blanks are incorrect.", result["errors"]
+            return True, "Correct.", [], 0, {"variant": variant["index"]}
+
+        main = "Please answer all the questions." if not answers else "Some answers are incorrect."
+        secondary = []
+        for slot in variant["slots"]:
+            answer = (answers.get(slot) or "").strip()
+            if not answer:
+                secondary.append("Blank {}: missing answer.".format(slot))
+                continue
+            slot_result = grade_answers({slot: variant["solutions"][slot]}, {slot: answer})
+            if not slot_result["valid"]:
+                secondary.append("Blank {}: incorrect.".format(slot))
+
+        return False, main, secondary, result["errors"], {"variant": variant["index"]}
