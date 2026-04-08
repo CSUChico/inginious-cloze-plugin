@@ -108,8 +108,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
-        default_variant = build_variant(self._data, self._task_fs, seed=seed)
         variants = load_variants(self._data, self._task_fs)
+        default_variant = build_variant(self._data, self._task_fs, seed=None)
         uniq = "cloze_{}_{}".format(pid, uuid4().hex)
 
         variant_payload = json.dumps([
