@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import secrets
 from typing import Any
 
@@ -21,71 +20,15 @@ except ModuleNotFoundError:  # pragma: no cover - local tests without INGInious
             return self._id
 
 
-_TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
-_SUPPORTED_VARIANT_KEYS = {"id", "name", "text"}
-
-
-def _coerce_problem_mapping(problem_content: Any) -> dict[str, Any]:
-    if isinstance(problem_content, dict):
-        return dict(problem_content)
-    return {}
-
-
-def parse_solutions_from_text(text: str) -> dict[str, tuple[str, Any]]:
-    solutions: dict[str, tuple[str, Any]] = {}
-    for slot, kind, rhs in _TOKEN_RE.findall(text or ""):
-        rhs = rhs.strip()
-        if kind == "SHORTANSWER":
-            solutions[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
-            continue
-
-        tolerance = 0.0
-        if "±" in rhs:
-            base, tol = rhs.split("±", 1)
-            rhs = base.strip()
-            tolerance = float(tol.strip())
-        solutions[slot] = ("NUMERICAL", (float(rhs), tolerance))
-    return solutions
-
-
-def expected_slots_from_text(text: str) -> list[str]:
-    return [match.group(1) for match in _TOKEN_RE.finditer(text or "")]
-
-
-def _normalize_variant(index: int, variant: Any) -> dict[str, Any]:
-    if isinstance(variant, str):
-        return {"id": str(index), "text": variant, "name": None}
-
-    if not isinstance(variant, dict):
-        raise ValueError("Each cloze variant must be a string or object.")
-
-    unknown = set(variant.keys()) - _SUPPORTED_VARIANT_KEYS
-    if unknown:
-        raise ValueError("Unsupported keys in cloze variant: {}".format(", ".join(sorted(unknown))))
-
-    text = variant.get("text", "")
-    if not isinstance(text, str) or not text.strip():
-        raise ValueError("Each cloze variant must define a non-empty text field.")
-
-    name = variant.get("name")
-    if name is not None and not isinstance(name, str):
-        raise ValueError("Variant name must be a string when provided.")
-
-    variant_id = variant.get("id", str(index))
-    return {"id": str(variant_id), "name": name, "text": text}
-
-
-def _load_variants_payload(raw_payload: Any) -> list[dict[str, Any]]:
-    if raw_payload is None:
-        return []
-
-    if isinstance(raw_payload, dict):
-        raw_payload = raw_payload.get("variants", [])
-
-    if not isinstance(raw_payload, list):
-        raise ValueError("Cloze variants JSON must be a list or an object with a variants list.")
-
-    return [_normalize_variant(index, variant) for index, variant in enumerate(raw_payload)]
+from .cloze_core import (
+    build_variant_record,
+    coerce_problem_mapping,
+    expected_slots_from_text,
+    grade_answers,
+    load_variants_payload,
+    normalize_inline_variants,
+    parse_solutions_from_text,
+)
 
 
 def _read_task_file(task_fs: Any, path: str) -> str:
@@ -185,15 +128,15 @@ def _read_task_file(task_fs: Any, path: str) -> str:
 
 
 def load_variants(problem_content: Any, task_fs: Any = None) -> list[dict[str, Any]]:
-    data = _coerce_problem_mapping(problem_content)
+    data = coerce_problem_mapping(problem_content)
     variants: list[dict[str, Any]] = []
 
     if data.get("variants_file"):
         payload = json.loads(_read_task_file(task_fs, data["variants_file"]))
-        variants.extend(_load_variants_payload(payload))
+        variants.extend(load_variants_payload(payload))
 
     if data.get("variants"):
-        variants.extend(_load_variants_payload(data["variants"]))
+        variants.extend(load_variants_payload(data["variants"]))
 
     if variants:
         return variants
@@ -226,43 +169,12 @@ def select_variant_index(problem_content: Any, task_fs: Any = None, seed: str | 
 def build_variant(problem_content: Any, task_fs: Any = None, seed: str | None = None,
                   submitted_variant: Any = None) -> dict[str, Any]:
     variants = load_variants(problem_content, task_fs)
-    if submitted_variant in (None, "") and seed is None:
-        index = secrets.randbelow(len(variants)) if variants else 0
-    else:
-        index = select_variant_index(problem_content, task_fs, seed=seed, submitted_variant=submitted_variant)
-    variant = dict(variants[index])
-    variant["index"] = index
-    variant["slots"] = expected_slots_from_text(variant["text"])
-    variant["solutions"] = parse_solutions_from_text(variant["text"])
-    return variant
-
-
-def grade_answers(solutions: dict[str, tuple[str, Any]], value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {"correct": 0, "total": max(len(solutions), 1), "errors": len(solutions), "valid": False}
-
-    correct = 0
-    errors = 0
-    for slot, (kind, rhs) in solutions.items():
-        answer = (value.get(slot) or "").strip()
-        is_correct = False
-
-        if kind == "SHORTANSWER":
-            is_correct = any(answer.lower() == expected.lower() for expected in rhs)
-        else:
-            try:
-                submitted = float(answer)
-                target, tolerance = rhs
-                is_correct = abs(submitted - target) <= tolerance
-            except (TypeError, ValueError):
-                is_correct = False
-
-        if is_correct:
-            correct += 1
-        else:
-            errors += 1
-
-    return {"correct": correct, "total": max(len(solutions), 1), "errors": errors, "valid": errors == 0}
+    return build_variant_record(
+        variants,
+        seed=seed,
+        submitted_variant=submitted_variant,
+        randomize=(submitted_variant in (None, "") and seed is None),
+    )
 
 
 class ClozeProblem(Problem):
@@ -285,12 +197,7 @@ class ClozeProblem(Problem):
 
     @classmethod
     def parse_problem(cls, problem_content, taskfs=None):
-        data = _coerce_problem_mapping(problem_content)
-        data.setdefault("name", "")
-        data.setdefault("text", "")
-        data.setdefault("variants_file", "")
-        if isinstance(data.get("variants"), str):
-            data["variants"] = json.loads(data["variants"])
+        data = normalize_inline_variants(problem_content)
         if data.get("variants"):
             load_variants({"variants": data.get("variants")}, taskfs)
         return data
