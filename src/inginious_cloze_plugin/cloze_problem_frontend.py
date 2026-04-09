@@ -252,8 +252,26 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         return {{}};
       }}
     }}
+    if (Array.isArray(rawValue)) {{
+      for (var i = 0; i < rawValue.length; i += 1) {{
+        var nested = normalizeAnswers(rawValue[i]);
+        if (Object.keys(nested).length > 0) {{
+          return nested;
+        }}
+      }}
+      return {{}};
+    }}
     if (!rawValue || typeof rawValue !== "object") {{
       return {{}};
+    }}
+    var wrapperKeys = ["value", "answer", "data", "raw"];
+    for (var j = 0; j < wrapperKeys.length; j += 1) {{
+      if (Object.prototype.hasOwnProperty.call(rawValue, wrapperKeys[j])) {{
+        var unwrapped = normalizeAnswers(rawValue[wrapperKeys[j]]);
+        if (Object.keys(unwrapped).length > 0) {{
+          return unwrapped;
+        }}
+      }}
     }}
     var normalized = {{}};
     Object.keys(rawValue).forEach(function (key) {{
