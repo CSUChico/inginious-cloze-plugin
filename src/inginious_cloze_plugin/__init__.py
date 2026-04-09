@@ -208,6 +208,75 @@ def _preserve_cloze_submit_data(course_factory, course, taskid, task_data, task_
     return None
 
 
+def _patch_task_editor_get_auth():
+    try:
+        from werkzeug.exceptions import NotFound
+        from inginious.common.base import id_checker
+        from inginious.common.exceptions import TaskNotFoundException
+        from inginious.frontend.pages.course_admin.task_edit import CourseEditTask
+        from inginious.frontend.pages.course_admin.task_edit_file import CourseTaskFiles
+        from inginious.frontend.tasks import _migrate_from_v_0_6
+    except Exception:
+        return
+
+    current = getattr(CourseEditTask, "GET_AUTH", None)
+    if current is None or getattr(current, "_cloze_patched", False):
+        return
+
+    def patched_get_auth(self, courseid, taskid):  # pylint: disable=unused-argument
+        if not id_checker(taskid):
+            raise NotFound(description=_("Invalid task id"))
+
+        course, __ = self.get_course_and_check_rights(courseid, allow_all_staff=False)
+
+        try:
+            task_data = self.task_factory.get_task_descriptor_content(courseid, taskid)
+        except TaskNotFoundException:
+            raise NotFound()
+
+        task_data = _migrate_from_v_0_6(task_data)
+        source_task_data = _load_task_descriptor_from_known_paths(courseid, taskid)
+        if isinstance(source_task_data, dict):
+            _merge_cloze_problem_fields(task_data, source_task_data)
+
+        environment_types = self.environment_types
+        environments = self.environments
+
+        current_filetype = None
+        try:
+            current_filetype = self.task_factory.get_task_descriptor_extension(courseid, taskid)
+        except Exception:
+            pass
+        available_filetypes = self.task_factory.get_available_task_file_extensions()
+
+        additional_tabs = self.plugin_manager.call_hook(
+            'task_editor_tab',
+            course=course,
+            taskid=taskid,
+            task_data=task_data,
+            template_helper=self.template_helper,
+        )
+
+        return self.template_helper.render(
+            "course_admin/task_edit.html",
+            course=course,
+            taskid=taskid,
+            problem_types=self.task_factory.get_problem_types(),
+            task_data=task_data,
+            environment_types=environment_types,
+            environments=environments,
+            problemdata=json.dumps(task_data.get('problems', {})),
+            contains_is_html=self.contains_is_html(task_data),
+            current_filetype=current_filetype,
+            available_filetypes=available_filetypes,
+            file_list=CourseTaskFiles.get_task_filelist(self.task_factory, courseid, taskid),
+            additional_tabs=additional_tabs,
+        )
+
+    patched_get_auth._cloze_patched = True  # type: ignore[attr-defined]
+    CourseEditTask.GET_AUTH = patched_get_auth
+
+
 def _start_cloze_agent(client, course_factory):
     context = getattr(client, "_context", None)
     backend_addr = getattr(client, "_router_addr", None)
@@ -435,5 +504,6 @@ def init(plugin_manager, course_factory, client, entry):
             course_factory, course, taskid, task_data, template_helper
         ),
     )
+    _patch_task_editor_get_auth()
     _start_cloze_agent(client, course_factory)
     return
