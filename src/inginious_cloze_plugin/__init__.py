@@ -208,6 +208,8 @@ def _inject_task_status_fix(course, task, template_helper):
                 window.setTimeout(syncSidebarFromFeedback, 2500);
             });
         }
+
+        window.setInterval(syncSidebarFromFeedback, 1000);
     }
 
     if (document.readyState === "loading") {
