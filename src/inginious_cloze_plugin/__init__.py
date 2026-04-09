@@ -130,19 +130,19 @@ def _merge_cloze_problem_fields(target_task_data, source_task_data):
 def _restore_cloze_editor_data(course_factory, course, taskid, task_data, template_helper=None):
     task_fs = _get_task_fs(course_factory, course.get_id(), taskid)
     source_task_data = _load_task_descriptor_from_task_fs(task_fs)
-    if not source_task_data:
-        source_task_data = _load_task_descriptor_from_known_paths(course.get_id(), taskid)
+    known_path_task_data = _load_task_descriptor_from_known_paths(course.get_id(), taskid)
+    if isinstance(source_task_data, dict) and isinstance(known_path_task_data, dict):
+        _merge_cloze_problem_fields(source_task_data, known_path_task_data)
+    elif not source_task_data:
+        source_task_data = known_path_task_data
     if isinstance(task_data, dict) and isinstance(source_task_data, dict):
         _merge_cloze_problem_fields(task_data, source_task_data)
     return None
 
 
 def _preserve_cloze_submit_data(course_factory, course, taskid, task_data, task_fs=None):
-    source_task_data = _load_task_descriptor_from_task_fs(task_fs or _get_task_fs(course_factory, course.get_id(), taskid))
-    if not source_task_data:
-        source_task_data = _load_task_descriptor_from_known_paths(course.get_id(), taskid)
-    if isinstance(task_data, dict) and isinstance(source_task_data, dict):
-        _merge_cloze_problem_fields(task_data, source_task_data)
+    # Do not preserve blanks on submit. If the user intentionally clears text or variants_file,
+    # that change should be reflected in the saved task descriptor.
     return None
 
 
@@ -371,12 +371,6 @@ def init(plugin_manager, course_factory, client, entry):
         "task_editor_tab",
         lambda course, taskid, task_data, template_helper: _restore_cloze_editor_data(
             course_factory, course, taskid, task_data, template_helper
-        ),
-    )
-    plugin_manager.add_hook(
-        "task_editor_submit",
-        lambda course, taskid, task_data, task_fs: _preserve_cloze_submit_data(
-            course_factory, course, taskid, task_data, task_fs
         ),
     )
     _start_cloze_agent(client, course_factory)
