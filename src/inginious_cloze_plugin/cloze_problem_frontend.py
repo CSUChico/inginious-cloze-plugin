@@ -307,7 +307,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         if (!Number.isNaN(stateVariant) && stateVariant >= 0 && stateVariant < variants.length) {{
           variantIndex = stateVariant;
         }}
-      }
+      }}
     }} catch (err) {{
       // Ignore malformed state and fall back below.
     }}
