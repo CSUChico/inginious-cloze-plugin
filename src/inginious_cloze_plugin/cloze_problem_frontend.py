@@ -59,9 +59,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   </div>
 </div>
 <div class="form-group row">
-  <label for="variants-file-PID" class="col-sm-2 control-label">Variants file</label>
+  <label for="variants_file-PID" class="col-sm-2 control-label">Variants file</label>
   <div class="col-sm-10">
-    <input type="text" class="form-control" id="variants-file-PID" name="problem[PID][variants_file]"
+    <input type="text" class="form-control" id="variants_file-PID" name="problem[PID][variants_file]"
            placeholder="cloze_variants.json" />
     <p class="help-block">Optional task file containing a JSON variants list for randomized prompts.</p>
   </div>
