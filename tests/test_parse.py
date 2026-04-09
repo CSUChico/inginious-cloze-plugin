@@ -42,19 +42,46 @@ def test_parse_solutions_from_text_supports_shortanswer_and_numerical():
     )
 
     assert solutions == {
-        "1": ("SHORTANSWER", ["Paris", "paris"]),
-        "2": ("NUMERICAL", (4.0, 0.1)),
+        "1": (
+            "SHORTANSWER",
+            [
+                {"weight": 1.0, "answer": "Paris", "feedback": None},
+                {"weight": 1.0, "answer": "paris", "feedback": None},
+            ],
+        ),
+        "2": ("NUMERICAL", [{"weight": 1.0, "answer": 4.0, "tolerance": 0.1, "feedback": None}]),
     }
 
 
 def test_parse_solutions_from_text_supports_multichoice():
     solutions = parse_solutions_from_text(
-        "Flag={1:MULTICHOICE:=none~overflow~=underflow}"
+        "Flag={1:MULTICHOICE:%0%none~overflow~=underflow#Correct}"
     )
 
     assert solutions == {
-        "1": ("MULTICHOICE", {"choices": ["none", "overflow", "underflow"], "correct": ["underflow"]}),
+        "1": (
+            "MULTICHOICE",
+            {
+                "choices": ["none", "overflow", "underflow"],
+                "answers": [
+                    {"weight": 0.0, "answer": "none", "feedback": None},
+                    {"weight": 0.0, "answer": "overflow", "feedback": None},
+                    {"weight": 1.0, "answer": "underflow", "feedback": "Correct"},
+                ],
+            },
+        ),
     }
+
+
+def test_parse_solutions_from_text_supports_partial_credit_and_feedback():
+    solutions = parse_solutions_from_text(
+        "Capital={1:SHORTANSWER:=Paris#Correct~%50%Lyon#Close~*#Nope} num={2:NUMERICAL:=23.8:0.1#Exact~%50%23.8:2#Close}"
+    )
+
+    assert solutions["1"][1][0] == {"weight": 1.0, "answer": "Paris", "feedback": "Correct"}
+    assert solutions["1"][1][1] == {"weight": 0.5, "answer": "Lyon", "feedback": "Close"}
+    assert solutions["2"][1][0] == {"weight": 1.0, "answer": 23.8, "tolerance": 0.1, "feedback": "Exact"}
+    assert solutions["2"][1][1] == {"weight": 0.5, "answer": 23.8, "tolerance": 2.0, "feedback": "Close"}
 
 
 def test_load_variants_payload_accepts_object_wrapper():
@@ -127,7 +154,10 @@ def test_build_variant_record_can_randomize_without_seed():
 
 
 def test_grade_answers_reports_fractional_score():
-    solutions = {"1": ("SHORTANSWER", ["Paris"]), "2": ("NUMERICAL", (4.0, 0.0))}
+    solutions = {
+        "1": ("SHORTANSWER", [{"weight": 1.0, "answer": "Paris", "feedback": None}]),
+        "2": ("NUMERICAL", [{"weight": 1.0, "answer": 4.0, "tolerance": 0.0, "feedback": None}]),
+    }
 
     result = grade_answers(solutions, {"1": "paris", "2": "5"})
 
@@ -135,7 +165,12 @@ def test_grade_answers_reports_fractional_score():
 
 
 def test_grade_answers_supports_multichoice():
-    solutions = {"1": ("MULTICHOICE", {"choices": ["none", "overflow", "underflow"], "correct": ["underflow"]})}
+    solutions = {
+        "1": (
+            "MULTICHOICE",
+            {"choices": ["none", "overflow", "underflow"], "answers": [{"weight": 1.0, "answer": "underflow", "feedback": None}]},
+        )
+    }
 
     assert grade_answers(solutions, {"1": "underflow"}) == {
         "correct": 1,
@@ -143,6 +178,36 @@ def test_grade_answers_supports_multichoice():
         "errors": 0,
         "valid": True,
         "score": 1.0,
+    }
+
+
+def test_grade_answers_supports_partial_credit():
+    solutions = {
+        "1": (
+            "SHORTANSWER",
+            [
+                {"weight": 1.0, "answer": "Paris", "feedback": None},
+                {"weight": 0.5, "answer": "Lyon", "feedback": None},
+            ],
+        ),
+        "2": (
+            "MULTICHOICE",
+            {
+                "choices": ["none", "overflow", "underflow"],
+                "answers": [
+                    {"weight": 0.0, "answer": "none", "feedback": None},
+                    {"weight": 1.0, "answer": "underflow", "feedback": None},
+                ],
+            },
+        ),
+    }
+
+    assert grade_answers(solutions, {"1": "Lyon", "2": "underflow"}) == {
+        "correct": 1,
+        "total": 2,
+        "errors": 1,
+        "valid": False,
+        "score": 0.75,
     }
 
 

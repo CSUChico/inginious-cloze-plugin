@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - local tests without INGInious
 
 from .cloze_problem_backend import ClozeProblem, build_variant, expected_slots_from_text, load_variants
 
-_TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}]+)\}")
+_TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):((?:\\.|[^}])*)\}")
 
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
@@ -35,7 +35,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             "Cloze (basic)": (
                 "type: cloze\n"
                 "text: |\n"
-                "  Water is {1:SHORTANSWER:=H2O}. Boiling point is {2:NUMERICAL:=100} C. State is {3:MULTICHOICE:=none~overflow~=underflow}.\n"
+                "  Water is {1:SHORTANSWER:=H2O}. Boiling point is {2:NUMERICAL:=100} C. State is {3:MULTICHOICE:%0%none~%0%overflow~=underflow}.\n"
             )
         }
 
@@ -48,10 +48,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   <label for="text-PID" class="col-sm-2 control-label">Text</label>
   <div class="col-sm-10">
     <textarea class="form-control" id="text-PID" name="problem[PID][text]" rows="8"
-              placeholder="Example: The capital of France is {1:SHORTANSWER:=Paris}."></textarea>
+              placeholder="Example: The capital of France is {1:SHORTANSWER:=Paris~%50%Lyon#Close, but not the capital.}."></textarea>
     <p class="help-block">
       Use tokens like <code>{1:SHORTANSWER:=H2O}</code>, <code>{2:NUMERICAL:=100}</code>, or
-      <code>{3:MULTICHOICE:=none~overflow~=underflow}</code>.
+      <code>{3:MULTICHOICE:%0%none~%0%overflow~=underflow}</code>.
+      Moodle-style percentages and optional feedback markers like <code>%50%answer#feedback</code> are supported.
       HTML is allowed, so you can build tables and formatted layouts directly in the prompt.
     </p>
   </div>
@@ -164,6 +165,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       if (!item) return null;
       if (item.charAt(0) === "=") {{
         item = item.slice(1).trim();
+      }} else {{
+        var weightedMatch = item.match(/^%-?\\d+(?:\\.\\d+)?%(.*)$/);
+        if (weightedMatch) {{
+          item = weightedMatch[1].trim();
+        }}
       }}
       item = item.split("#", 1)[0].trim();
       return item || null;

@@ -7,8 +7,74 @@ import secrets
 import re
 from typing import Any
 
-TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}]+)\}")
+TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):((?:\\.|[^}])*)\}")
 SUPPORTED_VARIANT_KEYS = {"id", "name", "text"}
+
+
+def _split_unescaped(text: str, separator: str) -> list[str]:
+    parts = []
+    current = []
+    escaped = False
+    for char in text:
+        if escaped:
+            current.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == separator:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
+def _split_feedback(text: str) -> tuple[str, str | None]:
+    parts = _split_unescaped(text, "#")
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], "#".join(parts[1:])
+
+
+def _unescape_moodle_text(text: str) -> str:
+    return re.sub(r"\\([~#}:=%\\\\])", r"\1", text)
+
+
+def _parse_weighted_option(raw_option: str) -> tuple[float, str, str | None]:
+    option = raw_option.strip()
+    if not option:
+        raise ValueError("Empty cloze answer option.")
+
+    weight = None
+    if option.startswith("="):
+        weight = 100.0
+        option = option[1:].strip()
+    else:
+        weighted_match = re.match(r"%(-?\d+(?:\.\d+)?)%(.*)$", option)
+        if weighted_match:
+            weight = float(weighted_match.group(1))
+            option = weighted_match.group(2).strip()
+
+    answer_text, feedback = _split_feedback(option)
+    answer_text = _unescape_moodle_text(answer_text.strip())
+    feedback = _unescape_moodle_text(feedback.strip()) if feedback is not None else None
+    return (0.0 if weight is None else weight / 100.0), answer_text, feedback
+
+
+def _parse_numerical_value(answer_text: str) -> tuple[float, float]:
+    tolerance = 0.0
+    if "±" in answer_text:
+        base, tol = answer_text.split("±", 1)
+        answer_text = base.strip()
+        tolerance = float(tol.strip())
+    elif ":" in answer_text:
+        base, tol = answer_text.split(":", 1)
+        answer_text = base.strip()
+        tolerance = float(tol.strip())
+    return float(answer_text), tolerance
 
 
 def coerce_problem_mapping(problem_content: Any) -> dict[str, Any]:
@@ -22,35 +88,55 @@ def parse_solutions_from_text(text: str) -> dict[str, tuple[str, Any]]:
     for slot, kind, rhs in TOKEN_RE.findall(text or ""):
         rhs = rhs.strip()
         if kind == "SHORTANSWER":
-            solutions[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
+            options = []
+            for raw_option in _split_unescaped(rhs, "~"):
+                raw_option = raw_option.strip()
+                if not raw_option:
+                    continue
+                if "|" in raw_option and not raw_option.startswith("%") and not raw_option.startswith("="):
+                    for alias in _split_unescaped(raw_option, "|"):
+                        alias = alias.strip()
+                        if alias:
+                            options.append({"weight": 1.0, "answer": _unescape_moodle_text(alias), "feedback": None})
+                    continue
+                weight, answer, feedback = _parse_weighted_option(raw_option)
+                if answer:
+                    options.append({"weight": weight, "answer": answer, "feedback": feedback})
+            solutions[slot] = ("SHORTANSWER", options)
             continue
         if kind == "MULTICHOICE":
             choices = []
-            correct = []
-            for raw_choice in rhs.split("~"):
+            answers = []
+            for raw_choice in _split_unescaped(rhs, "~"):
                 raw_choice = raw_choice.strip()
                 if not raw_choice:
                     continue
-                is_correct = raw_choice.startswith("=")
-                if is_correct:
-                    raw_choice = raw_choice[1:].strip()
-                label = raw_choice.split("#", 1)[0].strip()
+                weight, label, feedback = _parse_weighted_option(raw_choice)
                 if not label:
                     continue
                 choices.append(label)
-                if is_correct:
-                    correct.append(label)
-            if not choices or not correct:
-                raise ValueError("MULTICHOICE tokens must define at least one choice and one correct answer.")
-            solutions[slot] = ("MULTICHOICE", {"choices": choices, "correct": correct})
+                answers.append({"weight": weight, "answer": label, "feedback": feedback})
+            if not choices or not any(option["weight"] > 0 for option in answers):
+                raise ValueError("MULTICHOICE tokens must define at least one choice and one positive-credit answer.")
+            solutions[slot] = ("MULTICHOICE", {"choices": choices, "answers": answers})
             continue
 
-        tolerance = 0.0
-        if "±" in rhs:
-            base, tol = rhs.split("±", 1)
-            rhs = base.strip()
-            tolerance = float(tol.strip())
-        solutions[slot] = ("NUMERICAL", (float(rhs), tolerance))
+        options = []
+        for raw_option in _split_unescaped(rhs, "~"):
+            raw_option = raw_option.strip()
+            if not raw_option:
+                continue
+            if "|" in raw_option and not raw_option.startswith("%") and not raw_option.startswith("="):
+                for alias in _split_unescaped(raw_option, "|"):
+                    alias = alias.strip()
+                    if alias:
+                        value, tolerance = _parse_numerical_value(_unescape_moodle_text(alias))
+                        options.append({"weight": 1.0, "answer": value, "tolerance": tolerance, "feedback": None})
+                continue
+            weight, answer, feedback = _parse_weighted_option(raw_option)
+            value, tolerance = _parse_numerical_value(answer)
+            options.append({"weight": weight, "answer": value, "tolerance": tolerance, "feedback": feedback})
+        solutions[slot] = ("NUMERICAL", options)
     return solutions
 
 
@@ -146,32 +232,41 @@ def grade_answers(solutions: dict[str, tuple[str, Any]], value: Any) -> dict[str
 
     correct = 0
     errors = 0
+    slot_scores = []
     for slot, (kind, rhs) in solutions.items():
         answer = (value.get(slot) or "").strip()
-        is_correct = False
+        slot_score = 0.0
 
         if kind == "SHORTANSWER":
-            is_correct = any(answer.lower() == expected.lower() for expected in rhs)
+            for option in rhs:
+                if answer.lower() == option["answer"].lower():
+                    slot_score = max(slot_score, option["weight"])
         elif kind == "MULTICHOICE":
-            is_correct = any(answer.lower() == expected.lower() for expected in rhs["correct"])
+            for option in rhs["answers"]:
+                if answer.lower() == option["answer"].lower():
+                    slot_score = max(slot_score, option["weight"])
         else:
             try:
                 submitted = float(answer)
-                target, tolerance = rhs
-                is_correct = abs(submitted - target) <= tolerance
+                for option in rhs:
+                    if abs(submitted - option["answer"]) <= option["tolerance"]:
+                        slot_score = max(slot_score, option["weight"])
             except (TypeError, ValueError):
-                is_correct = False
+                slot_score = 0.0
 
-        if is_correct:
+        slot_score = max(min(slot_score, 1.0), -1.0)
+        slot_scores.append(slot_score)
+        if slot_score >= 1.0:
             correct += 1
         else:
             errors += 1
 
     total = max(len(solutions), 1)
+    total_score = max(sum(slot_scores), 0.0)
     return {
         "correct": correct,
         "total": total,
         "errors": errors,
         "valid": errors == 0,
-        "score": correct / total,
+        "score": min(total_score / total, 1.0),
     }
