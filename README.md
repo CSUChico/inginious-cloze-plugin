@@ -19,12 +19,6 @@ Restart INGInious webapp and MCQ agent.
 
 ## Dedicated cloze environment
 
-The `clozeenvironment` branch also defines a frontend environment type named `cloze` plus a matching agent entry point:
-
-```bash
-inginious-cloze-agent --backend tcp://127.0.0.1:2000 --tasks-dir /var/www/inginious
-```
-
 When a task uses the `cloze` environment type, the custom cloze agent computes the grade as:
 
 ```txt
