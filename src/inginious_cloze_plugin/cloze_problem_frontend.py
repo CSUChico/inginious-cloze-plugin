@@ -147,6 +147,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}}]+)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
+  var lastHiddenValue = hidden.value;
 
   function escapeHtml(value) {{
     return String(value)
@@ -198,6 +199,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       current[inp.getAttribute("data-slot")] = inp.value;
     }});
     hidden.value = JSON.stringify(current);
+    lastHiddenValue = hidden.value;
     return current;
   }}
 
@@ -239,6 +241,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }});
 
     hidden.value = JSON.stringify(current);
+    lastHiddenValue = hidden.value;
   }}
 
   function normalizeAnswers(rawValue) {{
@@ -364,6 +367,12 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       collect();
     }});
   }}
+
+  window.setInterval(function () {{
+    if (hidden.value !== lastHiddenValue) {{
+      setAnswers(hidden.value);
+    }}
+  }}, 250);
 
   renderVariant(variantIndex);
 }})();
