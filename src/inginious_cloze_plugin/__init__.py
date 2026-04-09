@@ -123,6 +123,10 @@ def _sync_cloze_user_task_cache(database, course_factory, submission):
             )
 
 
+def _inject_task_status_fix(course, task, template_helper):
+    return '<script src="/plugins/inginious_cloze_plugin/static/cloze_task_status.js"></script>'
+
+
 def init(plugin_manager, course_factory, client, entry):
     try:
         from inginious.frontend.environment_types import register_env_type
@@ -137,5 +141,6 @@ def init(plugin_manager, course_factory, client, entry):
         "submission_done",
         lambda submission, archive, newsub: _sync_cloze_user_task_cache(database, course_factory, submission),
     )
+    plugin_manager.add_hook("task_menu", _inject_task_status_fix)
     _start_cloze_agent(client, course_factory)
     return
