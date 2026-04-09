@@ -49,6 +49,9 @@ def grade_cloze_problem(problem_content: dict[str, Any], task_fs: Any, raw_submi
         message = "Some answers are incorrect. You got {}/{} blanks right.".format(
             result["correct"], result["total"]
         )
+        feedback_messages = [text for _, text in sorted(result.get("feedback", {}).items()) if text]
+        if feedback_messages:
+            message = "{} {}".format(message, " ".join(feedback_messages))
         status = "failed"
 
     return {
