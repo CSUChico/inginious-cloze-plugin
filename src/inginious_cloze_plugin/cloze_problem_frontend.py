@@ -20,7 +20,7 @@ except ModuleNotFoundError:  # pragma: no cover - local tests without INGInious
 
 from .cloze_problem_backend import ClozeProblem, build_variant, expected_slots_from_text, load_variants
 
-_TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
+_TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}]+)\}")
 
 
 class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
@@ -35,7 +35,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             "Cloze (basic)": (
                 "type: cloze\n"
                 "text: |\n"
-                "  Water is {1:SHORTANSWER:=H2O}. Boiling point is {2:NUMERICAL:=100} C.\n"
+                "  Water is {1:SHORTANSWER:=H2O}. Boiling point is {2:NUMERICAL:=100} C. State is {3:MULTICHOICE:=none~overflow~=underflow}.\n"
             )
         }
 
@@ -50,7 +50,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     <textarea class="form-control" id="text-PID" name="problem[PID][text]" rows="8"
               placeholder="Example: The capital of France is {1:SHORTANSWER:=Paris}."></textarea>
     <p class="help-block">
-      Use tokens like <code>{1:SHORTANSWER:=H2O}</code> or <code>{2:NUMERICAL:=100}</code>.
+      Use tokens like <code>{1:SHORTANSWER:=H2O}</code>, <code>{2:NUMERICAL:=100}</code>, or
+      <code>{3:MULTICHOICE:=none~overflow~=underflow}</code>.
       HTML is allowed, so you can build tables and formatted layouts directly in the prompt.
     </p>
   </div>
@@ -138,9 +139,39 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   if (!hidden) return;
 
   var variants = {variants_json};
-  var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL):=([^}}]+)\\}}/g;
+  var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}}]+)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
+
+  function escapeHtml(value) {{
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }}
+
+  function renderMultichoice(slot, rhs) {{
+    var options = rhs.split("~").map(function (item) {{
+      item = item.trim();
+      if (!item) return null;
+      if (item.charAt(0) === "=") {{
+        item = item.slice(1).trim();
+      }}
+      item = item.split("#", 1)[0].trim();
+      return item || null;
+    }}).filter(Boolean);
+
+    var html = '<select class="form-control cloze-input" data-slot="' + slot + '" id="{uniq}_slot_' + slot + '"' +
+      ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
+    html += '<option value=""></option>';
+    options.forEach(function (option) {{
+      html += '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>';
+    }});
+    html += '</select>';
+    return html;
+  }}
 
   function collect() {{
     var current = {{}};
@@ -151,7 +182,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
 
     var inputs = document.querySelectorAll('input.cloze-input[id^="{uniq}_slot_"]');
+    var selects = document.querySelectorAll('select.cloze-input[id^="{uniq}_slot_"]');
     inputs.forEach(function(inp) {{
+      current[inp.getAttribute("data-slot")] = inp.value;
+    }});
+    selects.forEach(function(inp) {{
       current[inp.getAttribute("data-slot")] = inp.value;
     }});
     hidden.value = JSON.stringify(current);
@@ -174,7 +209,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
 
     var text = variant.text || "";
-    textRoot.innerHTML = text.replace(tokenRe, function (_, slot, kind) {{
+    textRoot.innerHTML = text.replace(tokenRe, function (_, slot, kind, rhs) {{
+      if (kind === "MULTICHOICE") {{
+        return renderMultichoice(slot, rhs);
+      }}
       var inputType = kind === "NUMERICAL" ? "number" : "text";
       var stepAttr = inputType === "number" ? ' step="any"' : "";
       return '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
@@ -182,7 +220,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
     }});
 
-    var inputs = textRoot.querySelectorAll("input.cloze-input");
+    var inputs = textRoot.querySelectorAll("input.cloze-input, select.cloze-input");
     inputs.forEach(function(input) {{
       var slot = input.getAttribute("data-slot");
       input.value = current[slot] || "";

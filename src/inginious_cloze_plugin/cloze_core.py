@@ -7,7 +7,7 @@ import secrets
 import re
 from typing import Any
 
-TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL):=([^}]+)\}")
+TOKEN_RE = re.compile(r"\{(\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}]+)\}")
 SUPPORTED_VARIANT_KEYS = {"id", "name", "text"}
 
 
@@ -23,6 +23,26 @@ def parse_solutions_from_text(text: str) -> dict[str, tuple[str, Any]]:
         rhs = rhs.strip()
         if kind == "SHORTANSWER":
             solutions[slot] = ("SHORTANSWER", [s.strip() for s in rhs.split("|") if s.strip()])
+            continue
+        if kind == "MULTICHOICE":
+            choices = []
+            correct = []
+            for raw_choice in rhs.split("~"):
+                raw_choice = raw_choice.strip()
+                if not raw_choice:
+                    continue
+                is_correct = raw_choice.startswith("=")
+                if is_correct:
+                    raw_choice = raw_choice[1:].strip()
+                label = raw_choice.split("#", 1)[0].strip()
+                if not label:
+                    continue
+                choices.append(label)
+                if is_correct:
+                    correct.append(label)
+            if not choices or not correct:
+                raise ValueError("MULTICHOICE tokens must define at least one choice and one correct answer.")
+            solutions[slot] = ("MULTICHOICE", {"choices": choices, "correct": correct})
             continue
 
         tolerance = 0.0
@@ -132,6 +152,8 @@ def grade_answers(solutions: dict[str, tuple[str, Any]], value: Any) -> dict[str
 
         if kind == "SHORTANSWER":
             is_correct = any(answer.lower() == expected.lower() for expected in rhs)
+        elif kind == "MULTICHOICE":
+            is_correct = any(answer.lower() == expected.lower() for expected in rhs["correct"])
         else:
             try:
                 submitted = float(answer)

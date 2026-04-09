@@ -47,6 +47,16 @@ def test_parse_solutions_from_text_supports_shortanswer_and_numerical():
     }
 
 
+def test_parse_solutions_from_text_supports_multichoice():
+    solutions = parse_solutions_from_text(
+        "Flag={1:MULTICHOICE:=none~overflow~=underflow}"
+    )
+
+    assert solutions == {
+        "1": ("MULTICHOICE", {"choices": ["none", "overflow", "underflow"], "correct": ["underflow"]}),
+    }
+
+
 def test_load_variants_payload_accepts_object_wrapper():
     variants = load_variants_payload({
         "variants": [
@@ -122,6 +132,18 @@ def test_grade_answers_reports_fractional_score():
     result = grade_answers(solutions, {"1": "paris", "2": "5"})
 
     assert result == {"correct": 1, "total": 2, "errors": 1, "valid": False, "score": 0.5}
+
+
+def test_grade_answers_supports_multichoice():
+    solutions = {"1": ("MULTICHOICE", {"choices": ["none", "overflow", "underflow"], "correct": ["underflow"]})}
+
+    assert grade_answers(solutions, {"1": "underflow"}) == {
+        "correct": 1,
+        "total": 1,
+        "errors": 0,
+        "valid": True,
+        "score": 1.0,
+    }
 
 
 def test_parse_submission_payload_reads_hidden_json():
