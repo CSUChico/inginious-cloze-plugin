@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from .cloze_problem_backend import ClozeProblem  # noqa: F401
 from .cloze_agent import ClozeAgent  # noqa: F401
@@ -49,6 +50,79 @@ def _start_cloze_agent(client, course_factory):
     _AGENT_TASKS.append(task)
 
 
+def _get_evaluation_mode(course_factory, courseid, taskid):
+    if course_factory is None:
+        return None
+
+    try:
+        get_course = getattr(course_factory, "get_course", None)
+        if callable(get_course):
+            course = get_course(courseid)
+            if course is not None:
+                dispenser = course.get_task_dispenser()
+                if dispenser is not None:
+                    return dispenser.get_evaluation_mode(taskid)
+    except Exception:
+        return None
+
+    return None
+
+
+def _looks_like_cloze_state(raw_state):
+    try:
+        state = json.loads(raw_state or "")
+    except Exception:
+        return False
+
+    if not isinstance(state, dict) or not state:
+        return False
+
+    for value in state.values():
+        if not isinstance(value, dict):
+            return False
+        if "correct" not in value or "total" not in value:
+            return False
+    return True
+
+
+def _sync_cloze_user_task_cache(database, course_factory, submission):
+    if database is None or not _looks_like_cloze_state(submission.get("state")):
+        return
+
+    evaluation_mode = _get_evaluation_mode(course_factory, submission["courseid"], submission["taskid"])
+    for username in submission.get("username", []):
+        query = {
+            "username": username,
+            "courseid": submission["courseid"],
+            "taskid": submission["taskid"],
+        }
+        current = database.user_tasks.find_one(query) or {}
+
+        should_update = current.get("submissionid") in (None, submission["_id"])
+        if evaluation_mode == "last":
+            should_update = True
+        elif evaluation_mode == "best":
+            should_update = current.get("grade", 0.0) <= submission.get("grade", 0.0)
+        elif evaluation_mode is None:
+            # Fall back to a conservative heuristic for plugin-managed cloze tasks:
+            # update the cache unless it already points to a strictly better submission.
+            should_update = current.get("grade", 0.0) <= submission.get("grade", 0.0) or current.get("submissionid") in (None, submission["_id"])
+
+        if should_update:
+            database.user_tasks.find_one_and_update(
+                query,
+                {
+                    "$set": {
+                        "succeeded": submission.get("result") == "success",
+                        "grade": submission.get("grade", 0.0),
+                        "state": submission.get("state", ""),
+                        "submissionid": submission["_id"],
+                    }
+                },
+                upsert=True,
+            )
+
+
 def init(plugin_manager, course_factory, client, entry):
     try:
         from inginious.frontend.environment_types import register_env_type
@@ -58,5 +132,10 @@ def init(plugin_manager, course_factory, client, entry):
     if callable(register_env_type):
         register_env_type(ClozeFrontendEnv())
 
+    database = getattr(plugin_manager, "get_database", lambda: None)()
+    plugin_manager.add_hook(
+        "submission_done",
+        lambda submission, archive, newsub: _sync_cloze_user_task_cache(database, course_factory, submission),
+    )
     _start_cloze_agent(client, course_factory)
     return
