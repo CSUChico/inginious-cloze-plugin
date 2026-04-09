@@ -3,11 +3,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+
+try:
+    import yaml
+except Exception:  # pragma: no cover - yaml is available on the target server
+    yaml = None
 
 from .cloze_problem_backend import ClozeProblem  # noqa: F401
 from .cloze_agent import ClozeAgent  # noqa: F401
 from .cloze_env import ClozeFrontendEnv  # noqa: F401
 from .cloze_problem_frontend import DisplayableClozeProblem  # noqa: F401
+from .cloze_problem_backend import _read_task_file
 
 _AGENT_TASKS = []
 
@@ -26,6 +33,76 @@ def _get_tasks_fs(course_factory):
         if callable(method):
             return method()
     return getattr(course_factory, "_filesystem", None)
+
+
+def _get_task_fs(course_factory, courseid, taskid):
+    tasks_fs = _get_tasks_fs(course_factory)
+    if tasks_fs is None:
+        return None
+    try:
+        return tasks_fs.from_subfolder(courseid).from_subfolder(taskid)
+    except Exception:
+        return None
+
+
+def _load_task_descriptor_from_task_fs(task_fs):
+    if task_fs is None:
+        return {}
+
+    for descriptor_name in ("task.yaml", "task.yml", "task.json"):
+        try:
+            raw = _read_task_file(task_fs, descriptor_name)
+        except Exception:
+            continue
+
+        if descriptor_name.endswith(".json"):
+            try:
+                return json.loads(raw)
+            except Exception:
+                continue
+
+        if yaml is not None:
+            try:
+                parsed = yaml.safe_load(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                continue
+
+    return {}
+
+
+def _merge_cloze_problem_fields(target_task_data, source_task_data):
+    target_problems = target_task_data.get("problems", {})
+    source_problems = source_task_data.get("problems", {})
+    if not isinstance(target_problems, dict) or not isinstance(source_problems, dict):
+        return
+
+    for pid, target_problem in target_problems.items():
+        if not isinstance(target_problem, dict) or target_problem.get("type") != "cloze":
+            continue
+
+        source_problem = source_problems.get(pid)
+        if not isinstance(source_problem, dict):
+            continue
+
+        for field in ("text", "variants_file"):
+            if not target_problem.get(field) and source_problem.get(field):
+                target_problem[field] = source_problem.get(field)
+
+
+def _restore_cloze_editor_data(course_factory, course, taskid, task_data, template_helper=None):
+    task_fs = _get_task_fs(course_factory, course.get_id(), taskid)
+    source_task_data = _load_task_descriptor_from_task_fs(task_fs)
+    if isinstance(task_data, dict) and isinstance(source_task_data, dict):
+        _merge_cloze_problem_fields(task_data, source_task_data)
+    return None
+
+
+def _preserve_cloze_submit_data(course_factory, course, taskid, task_data, task_fs=None):
+    source_task_data = _load_task_descriptor_from_task_fs(task_fs or _get_task_fs(course_factory, course.get_id(), taskid))
+    if isinstance(task_data, dict) and isinstance(source_task_data, dict):
+        _merge_cloze_problem_fields(task_data, source_task_data)
+    return None
 
 
 def _start_cloze_agent(client, course_factory):
@@ -249,5 +326,17 @@ def init(plugin_manager, course_factory, client, entry):
         lambda submission, archive, newsub: _sync_cloze_user_task_cache(database, course_factory, submission),
     )
     plugin_manager.add_hook("task_menu", _inject_task_status_fix)
+    plugin_manager.add_hook(
+        "task_editor_tab",
+        lambda course, taskid, task_data, template_helper: _restore_cloze_editor_data(
+            course_factory, course, taskid, task_data, template_helper
+        ),
+    )
+    plugin_manager.add_hook(
+        "task_editor_submit",
+        lambda course, taskid, task_data, task_fs: _preserve_cloze_submit_data(
+            course_factory, course, taskid, task_data, task_fs
+        ),
+    )
     _start_cloze_agent(client, course_factory)
     return
