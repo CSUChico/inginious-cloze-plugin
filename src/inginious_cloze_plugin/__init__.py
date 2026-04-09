@@ -105,7 +105,69 @@ def _load_task_descriptor_from_known_paths(courseid, taskid):
                 except Exception:
                     continue
 
+            try:
+                parsed = _parse_simple_task_yaml(raw)
+                if isinstance(parsed, dict) and parsed:
+                    return parsed
+            except Exception:
+                continue
+
     return {}
+
+
+def _parse_yaml_scalar(value):
+    if value in ("''", '""'):
+        return ""
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        return value[1:-1]
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    try:
+        return int(value)
+    except Exception:
+        return value
+
+
+def _parse_simple_task_yaml(raw):
+    parsed = {}
+    problems = {}
+    current_problem = None
+    in_problems = False
+
+    for line in raw.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+
+        if indent == 0 and stripped == "problems:":
+            in_problems = True
+            current_problem = None
+            parsed["problems"] = problems
+            continue
+
+        if indent == 0:
+            in_problems = False
+            current_problem = None
+            if ":" in stripped:
+                key, value = stripped.split(":", 1)
+                parsed[key.strip()] = _parse_yaml_scalar(value.strip())
+            continue
+
+        if in_problems:
+            if indent == 4 and stripped.endswith(":"):
+                current_problem = stripped[:-1].strip()
+                problems[current_problem] = {}
+                continue
+
+            if indent >= 8 and current_problem and ":" in stripped:
+                key, value = stripped.split(":", 1)
+                problems[current_problem][key.strip()] = _parse_yaml_scalar(value.strip())
+
+    return parsed
 
 
 def _merge_cloze_problem_fields(target_task_data, source_task_data):
