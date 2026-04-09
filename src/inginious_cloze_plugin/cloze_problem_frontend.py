@@ -223,7 +223,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   if (!hidden) return;
 
   var variants = {variants_json};
-  var tokenRe = /\\{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):((?:\\\\.|[^}])*)\\}/g;
+  var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):((?:\\\\.|[^}}])*)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
   var lastHiddenValue = hidden.value;
