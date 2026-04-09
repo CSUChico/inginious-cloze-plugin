@@ -27,8 +27,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def input_type(self):
         return str
 
-    def get_text_fields(self):
-        return ["name", "text", "variants_file"]
+    @classmethod
+    def get_text_fields(cls):
+        return {"name": True, "text": True, "variants_file": True}
 
     def show_editbox_templates(self, template_helper, language):
         return {
