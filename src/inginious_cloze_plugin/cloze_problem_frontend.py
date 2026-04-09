@@ -119,8 +119,16 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
-        variants = load_variants(self._data, self._task_fs)
-        default_variant = build_variant(self._data, self._task_fs, seed=None)
+        load_error = None
+        try:
+            variants = load_variants(self._data, self._task_fs)
+            default_variant = build_variant(self._data, self._task_fs, seed=None)
+        except Exception as exc:
+            load_error = str(exc)
+            fallback_data = dict(self._data)
+            fallback_data["variants_file"] = ""
+            variants = load_variants(fallback_data, self._task_fs)
+            default_variant = build_variant(fallback_data, self._task_fs, seed=None)
         uniq = "cloze_{}_{}".format(pid, uuid4().hex)
 
         variant_payload = json.dumps([
@@ -134,6 +142,17 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         ])
 
         prompt_html = self._render_prompt_with_inputs(default_variant["text"], uniq)
+        if load_error:
+            prompt_html = (
+                '<div class="alert alert-warning" role="alert">'
+                '<strong>Cloze configuration warning.</strong> '
+                'The configured variants file could not be loaded, so the problem fell back to its inline text. '
+                'Details: {details}'
+                '</div>{prompt}'.format(
+                    details=html.escape(load_error),
+                    prompt=prompt_html,
+                )
+            )
         label = html.escape(default_variant.get("name") or (self._data or {}).get("name", "Question") or "Question")
         hidden = '<input type="hidden" name="{name}" id="{element_id}" value="{value}">'.format(
             name=html.escape(pid),

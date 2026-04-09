@@ -98,7 +98,7 @@ def _read_task_file(task_fs: Any, path: str) -> str:
 
     root_path = None
     for attr_name in (
-        "path", "root", "root_path", "base_path", "_path", "_root", "_root_path", "_folder", "_dir"
+        "path", "root", "root_path", "base_path", "prefix", "_path", "_root", "_root_path", "_folder", "_dir"
     ):
         candidate = getattr(task_fs, attr_name, None)
         if isinstance(candidate, str) and candidate:
