@@ -87,6 +87,7 @@ class ClozeAgent(Agent):
         total_correct = 0
         total_blanks = 0
         total_earned = 0.0
+        feedback_messages = []
 
         for problem_id, problem_content in task_problems.items():
             if problem_content.get("type") != "cloze":
@@ -99,6 +100,10 @@ class ClozeAgent(Agent):
             total_blanks += graded["total"]
             total_earned += graded["score"] * graded["total"]
             problem_feedback[problem_id] = (graded["status"], graded["message"])
+            if graded["message"]:
+                parts = graded["message"].split(". ", 1)
+                if len(parts) == 2 and parts[1].strip():
+                    feedback_messages.append(parts[1].strip())
             states[problem_id] = {
                 "variant": graded["variant"],
                 "correct": graded["correct"],
@@ -108,6 +113,12 @@ class ClozeAgent(Agent):
         grade = 100.0 * float(total_earned) / float(max(total_blanks, 1))
         result = "success" if total_correct == total_blanks else "failed"
         text = "You got {}/{} blanks right.".format(total_correct, total_blanks)
+        unique_feedback = []
+        for message in feedback_messages:
+            if message not in unique_feedback and message != text:
+                unique_feedback.append(message)
+        if unique_feedback:
+            text = "{} {}".format(text, " ".join(unique_feedback))
 
         await self.send_job_result(
             msg.job_id,
