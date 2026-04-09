@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 
 try:
     import yaml
@@ -71,6 +72,42 @@ def _load_task_descriptor_from_task_fs(task_fs):
     return {}
 
 
+def _load_task_descriptor_from_known_paths(courseid, taskid):
+    candidate_roots = [
+        "/var/www/inginious/tasks",
+        "/var/lib/inginious/tasks",
+        "/srv/inginious/tasks",
+        "./tasks",
+    ]
+
+    for root in candidate_roots:
+        task_dir = Path(root) / courseid / taskid
+        for descriptor_name in ("task.yaml", "task.yml", "task.json"):
+            descriptor_path = task_dir / descriptor_name
+            if not descriptor_path.exists():
+                continue
+            try:
+                raw = descriptor_path.read_text(encoding="utf-8")
+            except Exception:
+                continue
+
+            if descriptor_name.endswith(".json"):
+                try:
+                    parsed = json.loads(raw)
+                    return parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    continue
+
+            if yaml is not None:
+                try:
+                    parsed = yaml.safe_load(raw)
+                    return parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    continue
+
+    return {}
+
+
 def _merge_cloze_problem_fields(target_task_data, source_task_data):
     target_problems = target_task_data.get("problems", {})
     source_problems = source_task_data.get("problems", {})
@@ -93,6 +130,8 @@ def _merge_cloze_problem_fields(target_task_data, source_task_data):
 def _restore_cloze_editor_data(course_factory, course, taskid, task_data, template_helper=None):
     task_fs = _get_task_fs(course_factory, course.get_id(), taskid)
     source_task_data = _load_task_descriptor_from_task_fs(task_fs)
+    if not source_task_data:
+        source_task_data = _load_task_descriptor_from_known_paths(course.get_id(), taskid)
     if isinstance(task_data, dict) and isinstance(source_task_data, dict):
         _merge_cloze_problem_fields(task_data, source_task_data)
     return None
@@ -100,6 +139,8 @@ def _restore_cloze_editor_data(course_factory, course, taskid, task_data, templa
 
 def _preserve_cloze_submit_data(course_factory, course, taskid, task_data, task_fs=None):
     source_task_data = _load_task_descriptor_from_task_fs(task_fs or _get_task_fs(course_factory, course.get_id(), taskid))
+    if not source_task_data:
+        source_task_data = _load_task_descriptor_from_known_paths(course.get_id(), taskid)
     if isinstance(task_data, dict) and isinstance(source_task_data, dict):
         _merge_cloze_problem_fields(task_data, source_task_data)
     return None
