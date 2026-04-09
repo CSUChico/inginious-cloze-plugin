@@ -96,10 +96,14 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
             label_text = "Blank {}".format(slot)
             parts.append(
+                '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">'
                 '<label class="sr-only" for="{element_id}">{label_text}</label>'
                 '<input type="{input_type}" class="form-control cloze-input" '
                 'data-slot="{slot}" id="{element_id}" aria-label="{label_text}"{step_attr} '
-                'style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">'.format(
+                'style="display:block; width:100%; min-width:140px; vertical-align:middle;">'
+                '<span class="cloze-slot-feedback text-muted" data-slot-feedback="{slot}" aria-live="polite" '
+                'style="display:block; font-size:0.85em; margin-top:4px;"></span>'
+                '</span>'.format(
                     input_type=input_type,
                     slot=html.escape(slot),
                     element_id=html.escape("{}_slot_{}".format(uniq_prefix, slot)),
@@ -176,16 +180,39 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}).filter(Boolean);
 
     var labelText = 'Blank ' + slot;
-    var html = '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>';
+    var html = '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">';
+    html += '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>';
     html += '<select class="form-control cloze-input" data-slot="' + slot + '" id="{uniq}_slot_' + slot + '"' +
       ' aria-label="' + escapeHtml(labelText) + '"' +
-      ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
+      ' style="display:block; width:100%; min-width:140px; vertical-align:middle;">';
     html += '<option value=""></option>';
     options.forEach(function (option) {{
       html += '<option value="' + escapeHtml(option) + '">' + escapeHtml(option) + '</option>';
     }});
     html += '</select>';
+    html += '<span class="cloze-slot-feedback text-muted" data-slot-feedback="' + escapeHtml(slot) + '" aria-live="polite" style="display:block; font-size:0.85em; margin-top:4px;"></span>';
+    html += '</span>';
     return html;
+  }}
+
+  function clearInlineFeedback() {{
+    var feedbackNodes = textRoot.querySelectorAll('[data-slot-feedback]');
+    feedbackNodes.forEach(function(node) {{
+      node.textContent = '';
+    }});
+  }}
+
+  function renderInlineFeedback(feedbackMap) {{
+    clearInlineFeedback();
+    if (!feedbackMap || typeof feedbackMap !== "object") {{
+      return;
+    }}
+    Object.keys(feedbackMap).forEach(function(slot) {{
+      var node = textRoot.querySelector('[data-slot-feedback="' + slot + '"]');
+      if (node) {{
+        node.textContent = feedbackMap[slot] || '';
+      }}
+    }});
   }}
 
   function collect() {{
@@ -248,6 +275,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     hidden.value = JSON.stringify(current);
     lastHiddenValue = hidden.value;
+    clearInlineFeedback();
   }}
 
   function normalizeAnswers(rawValue) {{
@@ -337,10 +365,21 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
   }};
 
-  window.load_feedback_cloze = function (problemId, rawFeedback) {{
+  window.load_feedback_cloze = function () {{
+    var submissionId = arguments[0];
+    var problemId = arguments[1];
+    var rawFeedback = arguments[2];
     var target = window.__clozeProblemInstances[String(problemId)];
-    if (target) {{
+    if (!target) {{
       return;
+    }}
+    var feedbackPayload = rawFeedback;
+    if (feedbackPayload && typeof feedbackPayload === "object" && !Array.isArray(feedbackPayload) &&
+        Object.prototype.hasOwnProperty.call(feedbackPayload, problemId)) {{
+      feedbackPayload = feedbackPayload[problemId];
+    }}
+    if (Array.isArray(feedbackPayload) && feedbackPayload.length > 2 && feedbackPayload[2] && typeof feedbackPayload[2] === "object") {{
+      renderInlineFeedback(feedbackPayload[2]);
     }}
   }};
 

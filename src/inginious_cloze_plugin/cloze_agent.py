@@ -61,6 +61,7 @@ def grade_cloze_problem(problem_content: dict[str, Any], task_fs: Any, raw_submi
         "correct": result["correct"],
         "total": result["total"],
         "score": result["score"],
+        "feedback": result.get("feedback", {}),
     }
 
 
@@ -99,7 +100,7 @@ class ClozeAgent(Agent):
             total_correct += graded["correct"]
             total_blanks += graded["total"]
             total_earned += graded["score"] * graded["total"]
-            problem_feedback[problem_id] = (graded["status"], graded["message"])
+            problem_feedback[problem_id] = (graded["status"], graded["message"], graded.get("feedback", {}))
             if graded["message"]:
                 details = graded["message"]
                 prefix = "Some answers are incorrect. "
