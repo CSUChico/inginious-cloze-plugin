@@ -1,6 +1,12 @@
 # INGInious Cloze Plugin
 
-A pip-installable plugin for INGInious that adds a Moodle-style cloze question type and, on the `clozeenvironment` branch, a dedicated `cloze` grading environment for per-blank partial credit.
+A pip-installable plugin for INGInious that adds a Moodle-style cloze question type and a dedicated `cloze` grading environment for per-blank partial credit.
+
+## Versioning
+
+The current release is `v0.1.0`.
+
+Any changes moving forward should be released as `v0.1.1` or later.
 
 ## Installation
 
