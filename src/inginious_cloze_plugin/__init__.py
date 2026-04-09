@@ -257,7 +257,7 @@ def _patch_task_editor_get_auth():
             template_helper=self.template_helper,
         )
 
-        return self.template_helper.render(
+        rendered = self.template_helper.render(
             "course_admin/task_edit.html",
             course=course,
             taskid=taskid,
@@ -272,6 +272,10 @@ def _patch_task_editor_get_auth():
             file_list=CourseTaskFiles.get_task_filelist(self.task_factory, courseid, taskid),
             additional_tabs=additional_tabs,
         )
+        hydrator = _inject_task_editor_cloze_hydrator()
+        if isinstance(rendered, str) and "</body>" in rendered:
+            return rendered.replace("</body>", hydrator + "\n</body>", 1)
+        return rendered + hydrator
 
     patched_get_auth._cloze_patched = True  # type: ignore[attr-defined]
     CourseEditTask.GET_AUTH = patched_get_auth
@@ -477,6 +481,63 @@ def _inject_task_status_fix(course, task, template_helper):
         document.addEventListener("DOMContentLoaded", init);
     } else {
         init();
+    }
+})();
+</script>
+"""
+
+
+def _inject_task_editor_cloze_hydrator():
+    return """
+<script>
+(function () {
+    "use strict";
+
+    function hydrate() {
+        if (!window.problem_data) {
+            return false;
+        }
+
+        var foundAll = true;
+        Object.keys(window.problem_data).forEach(function (pid) {
+            var problem = window.problem_data[pid];
+            if (!problem || problem.type !== "cloze") {
+                return;
+            }
+
+            [
+                ["text", typeof problem.text === "string" ? problem.text : ""],
+                ["variants_file", typeof problem.variants_file === "string" ? problem.variants_file : ""]
+            ].forEach(function (entry) {
+                var field = entry[0];
+                var value = entry[1];
+                var node = document.querySelector('[name="problem[' + pid + '][' + field + ']"]');
+                if (!node) {
+                    foundAll = false;
+                    return;
+                }
+                node.value = value;
+            });
+        });
+
+        return foundAll;
+    }
+
+    function attempt(count) {
+        if (hydrate() || count >= 40) {
+            return;
+        }
+        window.setTimeout(function () {
+            attempt(count + 1);
+        }, 100);
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", function () {
+            attempt(0);
+        });
+    } else {
+        attempt(0);
     }
 })();
 </script>
