@@ -51,6 +51,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
               placeholder="Example: The capital of France is {1:SHORTANSWER:=Paris}."></textarea>
     <p class="help-block">
       Use tokens like <code>{1:SHORTANSWER:=H2O}</code> or <code>{2:NUMERICAL:=100}</code>.
+      HTML is allowed, so you can build tables and formatted layouts directly in the prompt.
     </p>
   </div>
 </div>
@@ -81,7 +82,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         last = 0
 
         for match in _TOKEN_RE.finditer(text or ""):
-            parts.append(html.escape(text[last:match.start()]))
+            parts.append((text or "")[last:match.start()])
 
             slot = match.group(1)
             kind = match.group(2)
@@ -103,7 +104,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             )
             last = match.end()
 
-        parts.append(html.escape((text or "")[last:]))
+        parts.append((text or "")[last:])
         return "".join(parts)
 
     def show_input(self, template_helper, language, seed):
@@ -172,34 +173,20 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       titleRoot.textContent = variant.name;
     }}
 
-    textRoot.innerHTML = "";
     var text = variant.text || "";
-    var lastIndex = 0;
-    var match;
+    textRoot.innerHTML = text.replace(tokenRe, function (_, slot, kind) {{
+      var inputType = kind === "NUMERICAL" ? "number" : "text";
+      var stepAttr = inputType === "number" ? ' step="any"' : "";
+      return '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
+        ' id="{uniq}_slot_' + slot + '"' + stepAttr +
+        ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
+    }});
 
-    while ((match = tokenRe.exec(text)) !== null) {{
-      if (match.index > lastIndex) {{
-        textRoot.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-      }}
-
-      var input = document.createElement("input");
-      input.type = match[2] === "NUMERICAL" ? "number" : "text";
-      if (input.type === "number") input.step = "any";
-      input.className = "form-control cloze-input";
-      input.setAttribute("data-slot", match[1]);
-      input.id = "{uniq}_slot_" + match[1];
-      input.style.display = "inline-block";
-      input.style.width = "auto";
-      input.style.minWidth = "140px";
-      input.style.verticalAlign = "middle";
-      input.value = current[match[1]] || "";
-      textRoot.appendChild(input);
-      lastIndex = tokenRe.lastIndex;
-    }}
-
-    if (lastIndex < text.length) {{
-      textRoot.appendChild(document.createTextNode(text.slice(lastIndex)));
-    }}
+    var inputs = textRoot.querySelectorAll("input.cloze-input");
+    inputs.forEach(function(input) {{
+      var slot = input.getAttribute("data-slot");
+      input.value = current[slot] || "";
+    }});
 
     hidden.value = JSON.stringify(current);
   }}
