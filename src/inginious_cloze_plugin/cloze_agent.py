@@ -101,9 +101,15 @@ class ClozeAgent(Agent):
             total_earned += graded["score"] * graded["total"]
             problem_feedback[problem_id] = (graded["status"], graded["message"])
             if graded["message"]:
-                parts = graded["message"].split(". ", 1)
-                if len(parts) == 2 and parts[1].strip():
-                    feedback_messages.append(parts[1].strip())
+                details = graded["message"]
+                prefix = "Some answers are incorrect. "
+                if details.startswith(prefix):
+                    details = details[len(prefix):]
+                summary = "You got {}/{} blanks right.".format(graded["correct"], graded["total"])
+                if details.startswith(summary):
+                    details = details[len(summary):].strip()
+                if details:
+                    feedback_messages.append(details)
             states[problem_id] = {
                 "variant": graded["variant"],
                 "correct": graded["correct"],
