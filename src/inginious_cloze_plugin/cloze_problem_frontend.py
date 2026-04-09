@@ -114,7 +114,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     def show_input(self, template_helper, language, seed):
         pid = self.get_id()
         variants = load_variants(self._data, self._task_fs)
-        default_variant = build_variant(self._data, self._task_fs, seed=None)
+        # Use a deterministic fallback variant in the initial HTML. The live page script
+        # can then replace it with the exact submitted or randomized variant once window.input
+        # is available, avoiding a misleading random prompt during page load/review.
+        default_variant = build_variant(self._data, self._task_fs, seed="")
         uniq = "cloze_{}_{}".format(pid, uuid4().hex)
 
         variant_payload = json.dumps([
@@ -293,7 +296,23 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   }};
 
   var variantIndex = {default_index};
-  if (window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0) {{
+  if (window.input && window.input['@state']) {{
+    try {{
+      var parsedState = window.input['@state'];
+      if (typeof parsedState === "string") {{
+        parsedState = JSON.parse(parsedState);
+      }}
+      if (parsedState && parsedState["{pid}"] && parsedState["{pid}"].variant !== undefined) {{
+        var stateVariant = Number(parsedState["{pid}"].variant);
+        if (!Number.isNaN(stateVariant) && stateVariant >= 0 && stateVariant < variants.length) {{
+          variantIndex = stateVariant;
+        }}
+      }
+    }} catch (err) {{
+      // Ignore malformed state and fall back below.
+    }}
+  }}
+  if (window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0 && variantIndex === {default_index}) {{
     var numeric = Number(window.input['@random'][0]);
     if (!Number.isNaN(numeric) && variants.length > 0) {{
       variantIndex = Math.floor(Math.abs(numeric) * variants.length) % variants.length;
