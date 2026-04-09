@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "inginious-cloze-plugin"
-version = "0.1.0"
+version = "0.1.1"
 description = "INGInious plugin that adds a Moodle Cloze-style problem type with a Task Editor tab"
 readme = "README.md"
 requires-python = ">=3.8"

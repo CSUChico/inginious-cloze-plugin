@@ -4,9 +4,9 @@ A pip-installable plugin for INGInious that adds a Moodle-style cloze question t
 
 ## Versioning
 
-The current release is `v0.1.0`.
+The current release is `v0.1.1`.
 
-Any changes moving forward should be released as `v0.1.1` or later.
+Any changes moving forward should be released as `v0.1.2` or later.
 
 ## Installation
 
