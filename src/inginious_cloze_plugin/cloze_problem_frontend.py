@@ -323,9 +323,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   }};
   window.__clozeProblemInstances["{pid}"] = instance;
 
-  window.load_input_cloze = function (problemId, rawValue) {{
+  window.load_input_cloze = function (submissionId, problemId, allInputs) {{
     var target = window.__clozeProblemInstances[String(problemId)];
     if (target) {{
+      var rawValue = allInputs && Object.prototype.hasOwnProperty.call(allInputs, problemId) ? allInputs[problemId] : null;
       target.setAnswers(rawValue);
     }}
   }};
