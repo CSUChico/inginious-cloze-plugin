@@ -493,14 +493,41 @@ def _inject_task_editor_cloze_hydrator():
 (function () {
     "use strict";
 
+    function getProblemData() {
+        if (window.__clozeHydratorProblemData) {
+            return window.__clozeHydratorProblemData;
+        }
+
+        var raw = window.problem_data;
+        if (!raw) {
+            return null;
+        }
+
+        if (typeof raw === "string") {
+            try {
+                raw = JSON.parse(raw);
+            } catch (err) {
+                return null;
+            }
+        }
+
+        if (!raw || typeof raw !== "object") {
+            return null;
+        }
+
+        window.__clozeHydratorProblemData = raw;
+        return raw;
+    }
+
     function hydrate() {
-        if (!window.problem_data) {
+        var problems = getProblemData();
+        if (!problems) {
             return false;
         }
 
         var foundAll = true;
-        Object.keys(window.problem_data).forEach(function (pid) {
-            var problem = window.problem_data[pid];
+        Object.keys(problems).forEach(function (pid) {
+            var problem = problems[pid];
             if (!problem || problem.type !== "cloze") {
                 return;
             }
