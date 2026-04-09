@@ -334,6 +334,15 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
   }};
 
+  var initialAnswers = {{}};
+  if (window.input && Object.prototype.hasOwnProperty.call(window.input, "{pid}")) {{
+    initialAnswers = normalizeAnswers(window.input["{pid}"]);
+    if (Object.keys(initialAnswers).length > 0) {{
+      setAnswers(initialAnswers);
+      return;
+    }}
+  }}
+
   var variantIndex = {default_index};
   if (window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0) {{
     var numeric = Number(window.input['@random'][0]);
