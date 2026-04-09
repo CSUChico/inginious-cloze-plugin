@@ -66,6 +66,60 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     <p class="help-block">Optional task file containing a JSON variants list for randomized prompts.</p>
   </div>
 </div>
+<script>
+(function() {
+  function hydrateClozeEditorFields() {
+    if (!window.problem_data) {
+      return false;
+    }
+
+    var done = true;
+    Object.keys(window.problem_data).forEach(function(pid) {
+      var problem = window.problem_data[pid];
+      if (!problem || problem.type !== "cloze") {
+        return;
+      }
+
+      [
+        ["text", typeof problem.text === "string" ? problem.text : ""],
+        ["variants_file", typeof problem.variants_file === "string" ? problem.variants_file : ""]
+      ].forEach(function(entry) {
+        var field = entry[0];
+        var value = entry[1];
+        var selector = '[name="problem[' + pid + '][' + field + ']"]';
+        var input = document.querySelector(selector);
+        if (!input) {
+          done = false;
+          return;
+        }
+        if (input.dataset.clozeHydrated === "1") {
+          return;
+        }
+        input.value = value;
+        input.dataset.clozeHydrated = "1";
+      });
+    });
+    return done;
+  }
+
+  function scheduleHydration(attempt) {
+    if (hydrateClozeEditorFields() || attempt >= 20) {
+      return;
+    }
+    window.setTimeout(function() {
+      scheduleHydration(attempt + 1);
+    }, 100);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function() {
+      scheduleHydration(0);
+    });
+  } else {
+    scheduleHydration(0);
+  }
+})();
+</script>
 """
 
     def __init__(self, problemid, problem_content, translations, taskfs):
