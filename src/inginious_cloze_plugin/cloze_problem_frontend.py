@@ -93,13 +93,16 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
                 input_type = "number"
                 step_attr = ' step="any"'
 
+            label_text = "Blank {}".format(slot)
             parts.append(
+                '<label class="sr-only" for="{element_id}">{label_text}</label>'
                 '<input type="{input_type}" class="form-control cloze-input" '
-                'data-slot="{slot}" id="{element_id}"{step_attr} '
+                'data-slot="{slot}" id="{element_id}" aria-label="{label_text}"{step_attr} '
                 'style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">'.format(
                     input_type=input_type,
                     slot=html.escape(slot),
                     element_id=html.escape("{}_slot_{}".format(uniq_prefix, slot)),
+                    label_text=html.escape(label_text),
                     step_attr=step_attr,
                 )
             )
@@ -165,7 +168,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       return item || null;
     }}).filter(Boolean);
 
-    var html = '<select class="form-control cloze-input" data-slot="' + slot + '" id="{uniq}_slot_' + slot + '"' +
+    var labelText = 'Blank ' + slot;
+    var html = '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>';
+    html += '<select class="form-control cloze-input" data-slot="' + slot + '" id="{uniq}_slot_' + slot + '"' +
+      ' aria-label="' + escapeHtml(labelText) + '"' +
       ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
     html += '<option value=""></option>';
     options.forEach(function (option) {{
@@ -219,8 +225,10 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       }}
       var inputType = kind === "NUMERICAL" ? "number" : "text";
       var stepAttr = inputType === "number" ? ' step="any"' : "";
-      return '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
-        ' id="{uniq}_slot_' + slot + '"' + stepAttr +
+      var labelText = 'Blank ' + slot;
+      return '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>' +
+        '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
+        ' id="{uniq}_slot_' + slot + '" aria-label="' + escapeHtml(labelText) + '"' + stepAttr +
         ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
     }});
 
