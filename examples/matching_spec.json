@@ -1,0 +1,48 @@
+{
+  "title": "Bitwise Matching",
+  "intro": [
+    "In the following questions assume the variable x is a signed integer and that the machine uses two's complement representation.",
+    "The >> operator behaves as an arithmetic shift."
+  ],
+  "instructions": "Match each description on the left with a line of code on the right.",
+  "variants": 4,
+  "shuffle_left": false,
+  "shuffle_right": true,
+  "wrap_in_object": true,
+  "left_items": [
+    {
+      "text": "x > 0",
+      "answer_id": "e"
+    },
+    {
+      "text": "x != 0",
+      "answer_id": "f"
+    }
+  ],
+  "right_items": [
+    {
+      "id": "a",
+      "text": "(x << W) >> W"
+    },
+    {
+      "id": "b",
+      "text": "1 << W"
+    },
+    {
+      "id": "c",
+      "text": "!(!x | x >> W)"
+    },
+    {
+      "id": "d",
+      "text": "~x - (TMin + TMax)"
+    },
+    {
+      "id": "e",
+      "text": "((x >> W) & 0x1) | !x"
+    },
+    {
+      "id": "f",
+      "text": "((~x+1 | x) >> W) & 1"
+    }
+  ]
+}
