@@ -49,9 +49,6 @@ def grade_cloze_problem(problem_content: dict[str, Any], task_fs: Any, raw_submi
         message = "Some answers are incorrect. You got {}/{} blanks right.".format(
             result["correct"], result["total"]
         )
-        feedback_messages = [text for _, text in sorted(result.get("feedback", {}).items()) if text]
-        if feedback_messages:
-            message = "{} {}".format(message, " ".join(feedback_messages))
         status = "failed"
 
     return {
@@ -88,8 +85,6 @@ class ClozeAgent(Agent):
         total_correct = 0
         total_blanks = 0
         total_earned = 0.0
-        feedback_messages = []
-
         for problem_id, problem_content in task_problems.items():
             if problem_content.get("type") != "cloze":
                 raise CannotCreateJobException(
@@ -101,16 +96,6 @@ class ClozeAgent(Agent):
             total_blanks += graded["total"]
             total_earned += graded["score"] * graded["total"]
             problem_feedback[problem_id] = (graded["status"], graded["message"], graded.get("feedback", {}))
-            if graded["message"]:
-                details = graded["message"]
-                prefix = "Some answers are incorrect. "
-                if details.startswith(prefix):
-                    details = details[len(prefix):]
-                summary = "You got {}/{} blanks right.".format(graded["correct"], graded["total"])
-                if details.startswith(summary):
-                    details = details[len(summary):].strip()
-                if details:
-                    feedback_messages.append(details)
             states[problem_id] = {
                 "variant": graded["variant"],
                 "correct": graded["correct"],
@@ -120,12 +105,6 @@ class ClozeAgent(Agent):
         grade = 100.0 * float(total_earned) / float(max(total_blanks, 1))
         result = "success" if total_correct == total_blanks else "failed"
         text = "You got {}/{} blanks right.".format(total_correct, total_blanks)
-        unique_feedback = []
-        for message in feedback_messages:
-            if message not in unique_feedback and message != text:
-                unique_feedback.append(message)
-        if unique_feedback:
-            text = "{} {}".format(text, " ".join(unique_feedback))
 
         await self.send_job_result(
             msg.job_id,

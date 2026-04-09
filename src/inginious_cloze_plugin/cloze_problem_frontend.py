@@ -213,7 +213,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     Object.keys(feedbackMap).forEach(function(slot) {{
       var node = textRoot.querySelector('[data-slot-feedback="' + slot + '"]');
       if (node) {{
-        node.textContent = feedbackMap[slot] || '';
+        var text = feedbackMap[slot] || '';
+        text = String(text).replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();
+        node.textContent = text;
       }}
     }});
   }}
@@ -222,7 +224,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     if (!problemMessage || typeof problemMessage !== "string") {{
       return "";
     }}
-    var message = problemMessage.trim();
+    var message = problemMessage.replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim();
     var summaryMatch = message.match(/^.*?You got \\d+\\/\\d+ blanks right\\.?(?:\\s+|$)(.*)$/);
     if (summaryMatch) {{
       return (summaryMatch[1] || "").trim();
