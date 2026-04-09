@@ -135,6 +135,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         script = """
 <script>
 (function() {{
+  window.__clozeProblemInstances = window.__clozeProblemInstances || {{}};
+
   var hidden = document.getElementById("{uniq}_json");
   if (!hidden) return;
 
@@ -142,6 +144,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}}]+)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
+  var feedbackRoot = document.getElementById("{uniq}_feedback");
 
   function escapeHtml(value) {{
     return String(value)
@@ -190,17 +193,19 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       current[inp.getAttribute("data-slot")] = inp.value;
     }});
     hidden.value = JSON.stringify(current);
+    return current;
   }}
 
-  function renderVariant(index) {{
+  function renderVariant(index, current) {{
     var variant = variants[index] || variants[0];
     if (!variant || !textRoot) return;
 
-    var current = {{}};
-    try {{
-      current = JSON.parse(hidden.value || "{{}}");
-    }} catch (err) {{
-      current = {{}};
+    if (!current) {{
+      try {{
+        current = JSON.parse(hidden.value || "{{}}");
+      }} catch (err) {{
+        current = {{}};
+      }}
     }}
     current.__variant = String(variant.index);
 
@@ -229,6 +234,84 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     hidden.value = JSON.stringify(current);
   }}
 
+  function normalizeAnswers(rawValue) {{
+    if (!rawValue) {{
+      return {{}};
+    }}
+    if (typeof rawValue === "string") {{
+      try {{
+        rawValue = JSON.parse(rawValue);
+      }} catch (err) {{
+        return {{}};
+      }}
+    }}
+    if (!rawValue || typeof rawValue !== "object") {{
+      return {{}};
+    }}
+    var normalized = {{}};
+    Object.keys(rawValue).forEach(function (key) {{
+      var value = rawValue[key];
+      normalized[String(key)] = value == null ? "" : String(value);
+    }});
+    return normalized;
+  }}
+
+  function setAnswers(rawValue) {{
+    var current = normalizeAnswers(rawValue);
+    var variantIndex = Number(current.__variant);
+    if (Number.isNaN(variantIndex)) {{
+      variantIndex = {default_index};
+    }}
+    renderVariant(variantIndex, current);
+  }}
+
+  function showFeedback(rawFeedback) {{
+    if (!feedbackRoot) {{
+      return;
+    }}
+
+    var status = "";
+    var text = "";
+    if (Array.isArray(rawFeedback)) {{
+      status = rawFeedback[0] || "";
+      text = rawFeedback[1] || "";
+    }} else if (typeof rawFeedback === "string") {{
+      text = rawFeedback;
+    }} else if (rawFeedback && typeof rawFeedback === "object") {{
+      status = rawFeedback.status || "";
+      text = rawFeedback.text || rawFeedback.message || "";
+    }}
+
+    if (!text) {{
+      feedbackRoot.innerHTML = "";
+      return;
+    }}
+
+    var alertClass = status === "success" ? "alert-success" : "alert-danger";
+    feedbackRoot.innerHTML = '<div class="alert ' + alertClass + '" role="alert">' + text + "</div>";
+  }}
+
+  var instance = {{
+    collect: collect,
+    setAnswers: setAnswers,
+    showFeedback: showFeedback
+  }};
+  window.__clozeProblemInstances["{pid}"] = instance;
+
+  window.load_input_cloze = function (problemId, rawValue) {{
+    var target = window.__clozeProblemInstances[String(problemId)];
+    if (target) {{
+      target.setAnswers(rawValue);
+    }}
+  }};
+
+  window.load_feedback_cloze = function (problemId, rawFeedback) {{
+    var target = window.__clozeProblemInstances[String(problemId)];
+    if (target) {{
+      target.showFeedback(rawFeedback);
+    }}
+  }};
+
   var variantIndex = {default_index};
   if (window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0) {{
     var numeric = Number(window.input['@random'][0]);
@@ -256,6 +339,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 </script>
 """.format(
             uniq=uniq,
+            pid=pid,
             variants_json=variant_payload,
             default_index=default_variant["index"],
         )
@@ -265,6 +349,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   <div class="panel-heading" id="{uniq}_title">{label}</div>
   <div class="panel-body">
     <div class="cloze-text" id="{uniq}_text" style="line-height:2.2;">{prompt_html}</div>
+    <div class="cloze-problem-feedback" id="{uniq}_feedback"></div>
     {hidden}
   </div>
 </div>

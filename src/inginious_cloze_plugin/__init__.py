@@ -129,6 +129,18 @@ def _inject_task_status_fix(course, task, template_helper):
 (function () {
     "use strict";
 
+    if (typeof window.load_feedback_cloze !== "function") {
+        window.load_feedback_cloze = function () {
+            return;
+        };
+    }
+
+    if (typeof window.load_input_cloze !== "function") {
+        window.load_input_cloze = function () {
+            return;
+        };
+    }
+
     function normalizeText(node) {
         return (node && node.textContent ? node.textContent : "").replace(/\\s+/g, " ").trim();
     }
