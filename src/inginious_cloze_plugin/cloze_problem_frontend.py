@@ -144,7 +144,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):=([^}}]+)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
-  var feedbackRoot = document.getElementById("{uniq}_feedback");
 
   function escapeHtml(value) {{
     return String(value)
@@ -265,36 +264,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     renderVariant(variantIndex, current);
   }}
 
-  function showFeedback(rawFeedback) {{
-    if (!feedbackRoot) {{
-      return;
-    }}
-
-    var status = "";
-    var text = "";
-    if (Array.isArray(rawFeedback)) {{
-      status = rawFeedback[0] || "";
-      text = rawFeedback[1] || "";
-    }} else if (typeof rawFeedback === "string") {{
-      text = rawFeedback;
-    }} else if (rawFeedback && typeof rawFeedback === "object") {{
-      status = rawFeedback.status || "";
-      text = rawFeedback.text || rawFeedback.message || "";
-    }}
-
-    if (!text) {{
-      feedbackRoot.innerHTML = "";
-      return;
-    }}
-
-    var alertClass = status === "success" ? "alert-success" : "alert-danger";
-    feedbackRoot.innerHTML = '<div class="alert ' + alertClass + '" role="alert">' + text + "</div>";
-  }}
-
   var instance = {{
     collect: collect,
-    setAnswers: setAnswers,
-    showFeedback: showFeedback
+    setAnswers: setAnswers
   }};
   window.__clozeProblemInstances["{pid}"] = instance;
 
@@ -308,7 +280,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   window.load_feedback_cloze = function (problemId, rawFeedback) {{
     var target = window.__clozeProblemInstances[String(problemId)];
     if (target) {{
-      target.showFeedback(rawFeedback);
+      return;
     }}
   }};
 
@@ -349,7 +321,6 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   <div class="panel-heading" id="{uniq}_title">{label}</div>
   <div class="panel-body">
     <div class="cloze-text" id="{uniq}_text" style="line-height:2.2;">{prompt_html}</div>
-    <div class="cloze-problem-feedback" id="{uniq}_feedback"></div>
     {hidden}
   </div>
 </div>
