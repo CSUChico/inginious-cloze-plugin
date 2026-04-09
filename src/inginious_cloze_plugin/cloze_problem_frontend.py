@@ -263,10 +263,34 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     return normalized;
   }}
 
+  function getVariantFromState() {{
+    if (!window.input || !window.input['@state']) {{
+      return null;
+    }}
+    try {{
+      var parsedState = window.input['@state'];
+      if (typeof parsedState === "string") {{
+        parsedState = JSON.parse(parsedState);
+      }}
+      if (parsedState && parsedState["{pid}"] && parsedState["{pid}"].variant !== undefined) {{
+        var stateVariant = Number(parsedState["{pid}"].variant);
+        if (!Number.isNaN(stateVariant) && stateVariant >= 0 && stateVariant < variants.length) {{
+          return stateVariant;
+        }}
+      }}
+    }} catch (err) {{
+      return null;
+    }}
+    return null;
+  }}
+
   function setAnswers(rawValue) {{
     var current = normalizeAnswers(rawValue);
     var variantIndex = Number(current.__variant);
     if (Number.isNaN(variantIndex)) {{
+      variantIndex = getVariantFromState();
+    }}
+    if (variantIndex === null || Number.isNaN(variantIndex)) {{
       variantIndex = {default_index};
     }}
     renderVariant(variantIndex, current);
