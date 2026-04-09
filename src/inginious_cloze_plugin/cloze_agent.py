@@ -49,6 +49,9 @@ def grade_cloze_problem(problem_content: dict[str, Any], task_fs: Any, raw_submi
         message = "Some answers are incorrect. You got {}/{} blanks right.".format(
             result["correct"], result["total"]
         )
+        feedback_messages = [text for _, text in sorted(result.get("feedback", {}).items()) if text]
+        if feedback_messages:
+            message = "{} {}".format(message, " ".join(feedback_messages))
         status = "failed"
 
     return {
@@ -83,6 +86,7 @@ class ClozeAgent(Agent):
         states = {}
         total_correct = 0
         total_blanks = 0
+        total_earned = 0.0
 
         for problem_id, problem_content in task_problems.items():
             if problem_content.get("type") != "cloze":
@@ -93,6 +97,7 @@ class ClozeAgent(Agent):
             graded = grade_cloze_problem(problem_content, task_fs, msg.inputdata.get(problem_id))
             total_correct += graded["correct"]
             total_blanks += graded["total"]
+            total_earned += graded["score"] * graded["total"]
             problem_feedback[problem_id] = (graded["status"], graded["message"])
             states[problem_id] = {
                 "variant": graded["variant"],
@@ -100,7 +105,7 @@ class ClozeAgent(Agent):
                 "total": graded["total"],
             }
 
-        grade = 100.0 * float(total_correct) / float(max(total_blanks, 1))
+        grade = 100.0 * float(total_earned) / float(max(total_blanks, 1))
         result = "success" if total_correct == total_blanks else "failed"
         text = "You got {}/{} blanks right.".format(total_correct, total_blanks)
 

@@ -208,6 +208,22 @@ def test_grade_answers_supports_partial_credit():
         "errors": 1,
         "valid": False,
         "score": 0.75,
+        "feedback": {},
+    }
+
+
+def test_grade_answers_returns_feedback_for_partial_numerical_match():
+    solutions = parse_solutions_from_text(
+        "2 + 3 = {1:NUMERICAL:=5#Exact~%50%5:0.1#Close}."
+    )
+
+    assert grade_answers(solutions, {"1": "5.05"}) == {
+        "correct": 0,
+        "total": 1,
+        "errors": 1,
+        "valid": False,
+        "score": 0.5,
+        "feedback": {"1": "Close"},
     }
 
 
@@ -238,6 +254,23 @@ def test_grade_cloze_problem_returns_fractional_result():
         "variant": 0,
         "correct": 1,
         "total": 2,
+        "score": 0.5,
+    }
+
+
+def test_grade_cloze_problem_returns_partial_credit_and_feedback():
+    result = grade_cloze_problem(
+        {"type": "cloze", "text": "2 + 3 = {1:NUMERICAL:=5#Exact~%50%5:0.1#Close}."},
+        None,
+        '{"1":"5.05"}',
+    )
+
+    assert result == {
+        "status": "failed",
+        "message": "Some answers are incorrect. You got 0/1 blanks right. Close",
+        "variant": 0,
+        "correct": 0,
+        "total": 1,
         "score": 0.5,
     }
 

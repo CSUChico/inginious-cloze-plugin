@@ -228,34 +228,45 @@ def grade_answers(solutions: dict[str, tuple[str, Any]], value: Any) -> dict[str
             "errors": len(solutions),
             "valid": False,
             "score": 0.0,
+            "feedback": {},
         }
 
     correct = 0
     errors = 0
     slot_scores = []
+    slot_feedback = {}
     for slot, (kind, rhs) in solutions.items():
         answer = (value.get(slot) or "").strip()
         slot_score = 0.0
+        matched_feedback = None
 
         if kind == "SHORTANSWER":
             for option in rhs:
                 if answer.lower() == option["answer"].lower():
-                    slot_score = max(slot_score, option["weight"])
+                    if option["weight"] >= slot_score:
+                        slot_score = option["weight"]
+                        matched_feedback = option["feedback"]
         elif kind == "MULTICHOICE":
             for option in rhs["answers"]:
                 if answer.lower() == option["answer"].lower():
-                    slot_score = max(slot_score, option["weight"])
+                    if option["weight"] >= slot_score:
+                        slot_score = option["weight"]
+                        matched_feedback = option["feedback"]
         else:
             try:
                 submitted = float(answer)
                 for option in rhs:
                     if abs(submitted - option["answer"]) <= option["tolerance"]:
-                        slot_score = max(slot_score, option["weight"])
+                        if option["weight"] >= slot_score:
+                            slot_score = option["weight"]
+                            matched_feedback = option["feedback"]
             except (TypeError, ValueError):
                 slot_score = 0.0
 
         slot_score = max(min(slot_score, 1.0), -1.0)
         slot_scores.append(slot_score)
+        if matched_feedback:
+            slot_feedback[slot] = matched_feedback
         if slot_score >= 1.0:
             correct += 1
         else:
@@ -269,4 +280,5 @@ def grade_answers(solutions: dict[str, tuple[str, Any]], value: Any) -> dict[str
         "errors": errors,
         "valid": errors == 0,
         "score": min(total_score / total, 1.0),
+        "feedback": slot_feedback,
     }
