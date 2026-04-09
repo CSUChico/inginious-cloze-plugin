@@ -153,6 +153,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
   var lastHiddenValue = hidden.value;
+  var lastInlineFeedback = null;
 
   function escapeHtml(value) {{
     return String(value)
@@ -205,14 +206,59 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   function renderInlineFeedback(feedbackMap) {{
     clearInlineFeedback();
     if (!feedbackMap || typeof feedbackMap !== "object") {{
+      lastInlineFeedback = null;
       return;
     }}
+    lastInlineFeedback = feedbackMap;
     Object.keys(feedbackMap).forEach(function(slot) {{
       var node = textRoot.querySelector('[data-slot-feedback="' + slot + '"]');
       if (node) {{
         node.textContent = feedbackMap[slot] || '';
       }}
     }});
+  }}
+
+  function extractInlineMessage(problemMessage) {{
+    if (!problemMessage || typeof problemMessage !== "string") {{
+      return "";
+    }}
+    var message = problemMessage.trim();
+    var summaryMatch = message.match(/^.*?You got \\d+\\/\\d+ blanks right\\.?(?:\\s+|$)(.*)$/);
+    if (summaryMatch) {{
+      return (summaryMatch[1] || "").trim();
+    }}
+    return "";
+  }}
+
+  function normalizeInlineFeedback(problemFeedback) {{
+    if (Array.isArray(problemFeedback)) {{
+      if (problemFeedback.length > 2 && problemFeedback[2] && typeof problemFeedback[2] === "object") {{
+        var mappedFeedback = problemFeedback[2];
+        if (Object.keys(mappedFeedback).length > 0) {{
+          return mappedFeedback;
+        }}
+      }}
+
+      var fallbackMessage = extractInlineMessage(problemFeedback[1]);
+      if (fallbackMessage) {{
+        var inputs = textRoot.querySelectorAll("input.cloze-input, select.cloze-input");
+        if (inputs.length === 1) {{
+          var onlySlot = inputs[0].getAttribute("data-slot");
+          if (onlySlot) {{
+            var fallbackMap = {{}};
+            fallbackMap[onlySlot] = fallbackMessage;
+            return fallbackMap;
+          }}
+        }}
+      }}
+      return null;
+    }}
+
+    if (problemFeedback && typeof problemFeedback === "object") {{
+      return Object.keys(problemFeedback).length > 0 ? problemFeedback : null;
+    }}
+
+    return null;
   }}
 
   function collect() {{
@@ -279,6 +325,9 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     hidden.value = JSON.stringify(current);
     lastHiddenValue = hidden.value;
     clearInlineFeedback();
+    if (lastInlineFeedback) {{
+      renderInlineFeedback(lastInlineFeedback);
+    }}
   }}
 
   function normalizeAnswers(rawValue) {{
@@ -373,15 +422,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     if (!target) {{
       return;
     }}
-    var feedbackPayload = rawFeedback;
-    if (Array.isArray(feedbackPayload) && feedbackPayload.length > 2 && feedbackPayload[2] &&
-        typeof feedbackPayload[2] === "object") {{
-      renderInlineFeedback(feedbackPayload[2]);
-      return;
-    }}
-    if (feedbackPayload && typeof feedbackPayload === "object" && !Array.isArray(feedbackPayload)) {{
-      renderInlineFeedback(feedbackPayload);
-    }}
+    renderInlineFeedback(normalizeInlineFeedback(rawFeedback));
   }};
 
   var initialAnswers = {{}};
