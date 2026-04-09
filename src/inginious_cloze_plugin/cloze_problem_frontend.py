@@ -261,10 +261,13 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       var inputType = kind === "NUMERICAL" ? "number" : "text";
       var stepAttr = inputType === "number" ? ' step="any"' : "";
       var labelText = 'Blank ' + slot;
-      return '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>' +
+      return '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">' +
+        '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>' +
         '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
         ' id="{uniq}_slot_' + slot + '" aria-label="' + escapeHtml(labelText) + '"' + stepAttr +
-        ' style="display:inline-block; width:auto; min-width:140px; vertical-align:middle;">';
+        ' style="display:block; width:100%; min-width:140px; vertical-align:middle;">' +
+        '<span class="cloze-slot-feedback text-muted" data-slot-feedback="' + escapeHtml(slot) + '" aria-live="polite" style="display:block; font-size:0.85em; margin-top:4px;"></span>' +
+        '</span>';
     }});
 
     var inputs = textRoot.querySelectorAll("input.cloze-input, select.cloze-input");
@@ -365,21 +368,19 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     }}
   }};
 
-  window.load_feedback_cloze = function () {{
-    var submissionId = arguments[0];
-    var problemId = arguments[1];
-    var rawFeedback = arguments[2];
+  window.load_feedback_cloze = function (problemId, rawFeedback) {{
     var target = window.__clozeProblemInstances[String(problemId)];
     if (!target) {{
       return;
     }}
     var feedbackPayload = rawFeedback;
-    if (feedbackPayload && typeof feedbackPayload === "object" && !Array.isArray(feedbackPayload) &&
-        Object.prototype.hasOwnProperty.call(feedbackPayload, problemId)) {{
-      feedbackPayload = feedbackPayload[problemId];
-    }}
-    if (Array.isArray(feedbackPayload) && feedbackPayload.length > 2 && feedbackPayload[2] && typeof feedbackPayload[2] === "object") {{
+    if (Array.isArray(feedbackPayload) && feedbackPayload.length > 2 && feedbackPayload[2] &&
+        typeof feedbackPayload[2] === "object") {{
       renderInlineFeedback(feedbackPayload[2]);
+      return;
+    }}
+    if (feedbackPayload && typeof feedbackPayload === "object" && !Array.isArray(feedbackPayload)) {{
+      renderInlineFeedback(feedbackPayload);
     }}
   }};
 
