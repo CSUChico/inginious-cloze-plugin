@@ -176,6 +176,13 @@ def _merge_cloze_problem_fields(target_task_data, source_task_data):
     if not isinstance(target_problems, dict) or not isinstance(source_problems, dict):
         return
 
+    for pid, source_problem in source_problems.items():
+        if pid in target_problems:
+            continue
+        if not isinstance(source_problem, dict) or source_problem.get("type") != "cloze":
+            continue
+        target_problems[pid] = dict(source_problem)
+
     for pid, target_problem in target_problems.items():
         if not isinstance(target_problem, dict) or target_problem.get("type") != "cloze":
             continue

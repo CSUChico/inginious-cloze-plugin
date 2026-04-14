@@ -4,6 +4,7 @@ sys.path.insert(0, "src")
 
 import inginious_cloze_plugin
 from inginious_cloze_plugin.cloze_agent import grade_cloze_problem, parse_submission_payload
+from inginious_cloze_plugin.__init__ import _merge_cloze_problem_fields, _parse_simple_task_yaml
 from inginious_cloze_plugin.cloze_core import (
     build_variant_record,
     grade_answers,
@@ -139,6 +140,71 @@ def test_build_variant_uses_submitted_variant_index():
     assert variant["index"] == 1
     assert variant["text"] == "blue={1:SHORTANSWER:=blue}"
     assert variant["slots"] == ["1"]
+
+
+def test_parse_simple_task_yaml_keeps_multiple_cloze_problems():
+    parsed = _parse_simple_task_yaml(
+        """
+name: clozetest3
+problems:
+    test:
+        name: test
+        text: ''
+        type: cloze
+        variants_file: cloze_variants.json
+    bitops:
+        name: BitOps
+        text: ''
+        type: cloze
+        variants_file: bitops.json
+"""
+    )
+
+    assert parsed["problems"] == {
+        "test": {
+            "name": "test",
+            "text": "",
+            "type": "cloze",
+            "variants_file": "cloze_variants.json",
+        },
+        "bitops": {
+            "name": "BitOps",
+            "text": "",
+            "type": "cloze",
+            "variants_file": "bitops.json",
+        },
+    }
+
+
+def test_merge_cloze_problem_fields_adds_missing_cloze_problems():
+    target_task_data = {
+        "problems": {
+            "test": {"type": "cloze", "name": "test", "text": "", "variants_file": "cloze_variants.json"}
+        }
+    }
+    source_task_data = {
+        "problems": {
+            "test": {"type": "cloze", "name": "test", "text": "Prompt A", "variants_file": "cloze_variants.json"},
+            "bitops": {"type": "cloze", "name": "BitOps", "text": "Prompt B", "variants_file": "bitops.json"},
+        }
+    }
+
+    _merge_cloze_problem_fields(target_task_data, source_task_data)
+
+    assert target_task_data["problems"] == {
+        "test": {
+            "type": "cloze",
+            "name": "test",
+            "text": "Prompt A",
+            "variants_file": "cloze_variants.json",
+        },
+        "bitops": {
+            "type": "cloze",
+            "name": "BitOps",
+            "text": "Prompt B",
+            "variants_file": "bitops.json",
+        },
+    }
 
 
 def test_build_variant_record_can_randomize_without_seed():

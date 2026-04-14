@@ -19,11 +19,25 @@ def task_editor_submit(task: dict[str, Any], key: str, data: dict[str, Any], lan
     """Handle the editor form submission: update the task dictionary."""
     if key != "cloze":
         return {}
-    text = data.get("text", "")
-    # Ensure problems is a mapping (not a list), and write our problem
+
+    submitted_problems = data.get("problems", {})
+    if not isinstance(submitted_problems, dict):
+        return {"message": "Cloze problem saved.", "task": task}
+
     task.setdefault("problems", {})
-    task["problems"]["p1"] = {
-        "type": "cloze",
-        "text": text,
-    }
+    if not isinstance(task["problems"], dict):
+        task["problems"] = {}
+
+    for pid, problem in submitted_problems.items():
+        if not isinstance(problem, dict) or problem.get("type") != "cloze":
+            continue
+
+        current = task["problems"].get(pid, {})
+        if not isinstance(current, dict):
+            current = {}
+
+        current.update(problem)
+        current["type"] = "cloze"
+        task["problems"][pid] = current
+
     return {"message": "Cloze problem saved.", "task": task}
