@@ -597,8 +597,78 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     min-width: max-content;
   }}
 
+  .cloze-problem .cloze-text p,
+  .cloze-problem .cloze-text li {{
+    font-size: 16px;
+    line-height: 1.65;
+  }}
+
+  .cloze-problem .cloze-text ul {{
+    padding-left: 28px;
+    margin: 12px 0 20px;
+  }}
+
+  .cloze-problem .cloze-text li {{
+    margin-bottom: 10px;
+  }}
+
   .cloze-problem .cloze-text table {{
     max-width: none;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table {{
+    border-collapse: collapse;
+    margin: 20px 0;
+    width: auto !important;
+    max-width: none;
+    table-layout: auto;
+    background: #fff;
+    border: 1px solid #cfd8e3;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table td,
+  .cloze-problem .cloze-text .cloze-converted-table th {{
+    padding: 10px 12px;
+    font-size: 15px;
+    line-height: 1.45;
+    vertical-align: top;
+    white-space: nowrap;
+    border: 1px solid #dbe3ec;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table th {{
+    background: #f6f8fb;
+    font-weight: 600;
+    text-align: center;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table td:first-child,
+  .cloze-problem .cloze-text .cloze-converted-table th:first-child {{
+    text-align: left;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table td > .cloze-converted-table {{
+    margin: 0;
+    box-shadow: none;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-table .cloze-input {{
+    min-width: 88px;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-code {{
+    margin: 16px 0;
+    padding: 14px 16px;
+    border: 1px solid #d9dee3;
+    border-radius: 6px;
+    background: #f8fafc;
+    line-height: 1.5;
+  }}
+
+  .cloze-problem .cloze-text .cloze-converted-break {{
+    display: block;
+    height: 12px;
   }}
 
   .cloze-problem .cloze-random-problem {{
