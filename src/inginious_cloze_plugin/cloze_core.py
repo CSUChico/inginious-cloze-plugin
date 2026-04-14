@@ -144,6 +144,17 @@ def expected_slots_from_text(text: str) -> list[str]:
     return [match.group(1) for match in TOKEN_RE.finditer(text or "")]
 
 
+def renumber_cloze_slots(text: str) -> str:
+    next_slot = 0
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal next_slot
+        next_slot += 1
+        return "{" + "{}:{}:{}".format(next_slot, match.group(2), match.group(3)) + "}"
+
+    return TOKEN_RE.sub(repl, text or "")
+
+
 def normalize_variant(index: int, variant: Any) -> dict[str, Any]:
     if isinstance(variant, str):
         return {"id": str(index), "text": variant, "name": None}
@@ -214,6 +225,7 @@ def build_variant_record(variants: list[dict[str, Any]], seed: str | None = None
                          submitted_variant: Any = None, randomize: bool = False) -> dict[str, Any]:
     index = choose_variant_index(variants, seed=seed, submitted_variant=submitted_variant, randomize=randomize)
     variant = dict(variants[index])
+    variant["text"] = renumber_cloze_slots(variant["text"])
     variant["index"] = index
     variant["slots"] = expected_slots_from_text(variant["text"])
     variant["solutions"] = parse_solutions_from_text(variant["text"])

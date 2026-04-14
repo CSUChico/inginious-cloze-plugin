@@ -11,6 +11,7 @@ from inginious_cloze_plugin.cloze_core import (
     load_variants_payload,
     normalize_inline_variants,
     parse_solutions_from_text,
+    renumber_cloze_slots,
 )
 from inginious_cloze_plugin.cloze_problem_backend import ClozeProblem, build_variant, load_variants
 
@@ -140,6 +141,37 @@ def test_build_variant_uses_submitted_variant_index():
     assert variant["index"] == 1
     assert variant["text"] == "blue={1:SHORTANSWER:=blue}"
     assert variant["slots"] == ["1"]
+
+
+def test_renumber_cloze_slots_makes_repeated_slots_unique():
+    text = (
+        "{1:SHORTANSWER:=0}"
+        "{1:SHORTANSWER:=0}"
+        "{1:SHORTANSWER:=0}"
+        "{1:SHORTANSWER:=0}"
+        "{1:SHORTANSWER:=0}"
+        "{1:SHORTANSWER:=1}"
+    )
+
+    renumbered = renumber_cloze_slots(text)
+
+    assert renumbered == (
+        "{1:SHORTANSWER:=0}"
+        "{2:SHORTANSWER:=0}"
+        "{3:SHORTANSWER:=0}"
+        "{4:SHORTANSWER:=0}"
+        "{5:SHORTANSWER:=0}"
+        "{6:SHORTANSWER:=1}"
+    )
+
+
+def test_build_variant_record_renumbers_duplicate_slots_before_grading():
+    variant = build_variant_record(
+        [{"text": "{1:SHORTANSWER:=a} {1:SHORTANSWER:=b} {1:SHORTANSWER:=c}"}]
+    )
+
+    assert variant["slots"] == ["1", "2", "3"]
+    assert set(variant["solutions"].keys()) == {"1", "2", "3"}
 
 
 def test_parse_simple_task_yaml_keeps_multiple_cloze_problems():
