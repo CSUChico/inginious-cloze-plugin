@@ -279,7 +279,7 @@ def _patch_task_editor_get_auth():
             file_list=CourseTaskFiles.get_task_filelist(self.task_factory, courseid, taskid),
             additional_tabs=additional_tabs,
         )
-        hydrator = _inject_task_editor_cloze_hydrator()
+        hydrator = _inject_task_editor_cloze_hydrator(source_task_data)
         if isinstance(rendered, str) and "</body>" in rendered:
             return rendered.replace("</body>", hydrator + "\n</body>", 1)
         return rendered + hydrator
@@ -494,11 +494,23 @@ def _inject_task_status_fix(course, task, template_helper):
 """
 
 
-def _inject_task_editor_cloze_hydrator():
+def _inject_task_editor_cloze_hydrator(source_task_data=None):
+    source_problems = {}
+    if isinstance(source_task_data, dict):
+        raw_problems = source_task_data.get("problems", {})
+        if isinstance(raw_problems, dict):
+            source_problems = {
+                pid: problem
+                for pid, problem in raw_problems.items()
+                if isinstance(problem, dict) and problem.get("type") == "cloze"
+            }
+
     return """
 <script>
 (function () {
     "use strict";
+
+    window.__clozeSourceProblems = __SOURCE_PROBLEMS__;
 
     function getProblemData() {
         if (window.__clozeHydratorProblemData) {
@@ -526,20 +538,141 @@ def _inject_task_editor_cloze_hydrator():
         return raw;
     }
 
+    function getClozeProblems() {
+        var problems = {};
+        var renderedProblems = getProblemData();
+        var sourceProblems = window.__clozeSourceProblems || {};
+        var pid;
+
+        if (renderedProblems) {
+            Object.keys(renderedProblems).forEach(function (key) {
+                problems[key] = renderedProblems[key];
+            });
+        }
+
+        Object.keys(sourceProblems).forEach(function (key) {
+            problems[key] = sourceProblems[key];
+        });
+
+        for (pid in problems) {
+            if (!Object.prototype.hasOwnProperty.call(problems, pid)) {
+                continue;
+            }
+            if (!problems[pid] || problems[pid].type !== "cloze") {
+                delete problems[pid];
+            }
+        }
+
+        return problems;
+    }
+
+    function getCurrentProblemIds() {
+        var ids = {};
+
+        document.querySelectorAll("[name]").forEach(function (node) {
+            var match = node.name.match(/^problem\\[([^\\]]+)\\]\\[/);
+            if (match) {
+                ids[match[1]] = true;
+            }
+        });
+
+        document.querySelectorAll("[id]").forEach(function (node) {
+            var text = (node.textContent || "").trim();
+            var match = text.match(/^Problem id:\\s*(.+)$/);
+            if (match) {
+                ids[match[1]] = true;
+            }
+        });
+
+        return ids;
+    }
+
+    function findAddControls() {
+        var idInput = document.querySelector('input[placeholder="new-problem-id"]');
+        if (!idInput) {
+            return null;
+        }
+
+        var container = idInput.closest(".row, .form-group, .well, .panel-body") || document;
+        var typeSelect = container.querySelector("select");
+        var addButton = Array.prototype.find.call(
+            container.querySelectorAll("button, input[type=button], input[type=submit], a.btn"),
+            function (node) {
+                return /add/i.test((node.textContent || node.value || "").trim());
+            }
+        );
+
+        if (!typeSelect || !addButton) {
+            return null;
+        }
+
+        return {
+            idInput: idInput,
+            typeSelect: typeSelect,
+            addButton: addButton
+        };
+    }
+
+    function trigger(node, eventName) {
+        node.dispatchEvent(new Event(eventName, { bubbles: true }));
+    }
+
+    function addMissingProblem(pid, controls) {
+        controls.idInput.value = pid;
+        trigger(controls.idInput, "input");
+        trigger(controls.idInput, "change");
+
+        controls.typeSelect.value = "cloze";
+        trigger(controls.typeSelect, "input");
+        trigger(controls.typeSelect, "change");
+
+        if (typeof controls.addButton.click === "function") {
+            controls.addButton.click();
+        } else {
+            trigger(controls.addButton, "click");
+        }
+    }
+
+    function ensureProblemsExist(problems) {
+        var controls = findAddControls();
+        var currentIds = getCurrentProblemIds();
+        var missing = Object.keys(problems).filter(function (pid) {
+            return !currentIds[pid];
+        });
+
+        if (!missing.length) {
+            return true;
+        }
+
+        if (!controls) {
+            return false;
+        }
+
+        missing.forEach(function (pid, index) {
+            window.setTimeout(function () {
+                addMissingProblem(pid, controls);
+            }, index * 75);
+        });
+
+        return false;
+    }
+
     function hydrate() {
-        var problems = getProblemData();
-        if (!problems) {
+        var problems = getClozeProblems();
+        if (!Object.keys(problems).length) {
+            return true;
+        }
+
+        if (!ensureProblemsExist(problems)) {
             return false;
         }
 
         var foundAll = true;
         Object.keys(problems).forEach(function (pid) {
             var problem = problems[pid];
-            if (!problem || problem.type !== "cloze") {
-                return;
-            }
 
             [
+                ["name", typeof problem.name === "string" ? problem.name : ""],
                 ["text", typeof problem.text === "string" ? problem.text : ""],
                 ["variants_file", typeof problem.variants_file === "string" ? problem.variants_file : ""]
             ].forEach(function (entry) {
@@ -575,7 +708,7 @@ def _inject_task_editor_cloze_hydrator():
     }
 })();
 </script>
-"""
+""".replace("__SOURCE_PROBLEMS__", json.dumps(source_problems))
 
 
 def init(plugin_manager, course_factory, client, entry):
