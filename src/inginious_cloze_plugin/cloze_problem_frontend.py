@@ -748,6 +748,19 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     height: 12px;
   }}
 
+  .cloze-problem .cloze-text .cloze-cache-meta {{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.45;
+  }}
+
+  .cloze-problem .cloze-text .cloze-cache-bytes {{
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    font-size: 14px;
+    line-height: 1.6;
+  }}
+
   .cloze-problem .cloze-text .cloze-comparison-sections {{
     display: flex;
     flex-direction: column;
