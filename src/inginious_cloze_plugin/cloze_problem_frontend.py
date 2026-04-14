@@ -383,35 +383,44 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     var comparisonTables = textRoot.querySelectorAll('.cloze-converted-table');
     comparisonTables.forEach(function(table) {{
-      var headers = Array.prototype.slice.call(table.querySelectorAll(':scope > tbody > tr:first-child > th, :scope > tr:first-child > th'))
-        .map(function(node) {{ return (node.textContent || '').replace(/\\s+/g, ' ').trim(); }});
+      if (table.dataset.clozeEnhanced === '1') {{
+        return;
+      }}
 
-      if (headers.length === 2 && headers[0] === 'TLB' && headers[1] === 'Page Table' && !table.dataset.clozeEnhanced) {{
-        var rows = table.querySelectorAll(':scope > tbody > tr, :scope > tr');
-        if (rows.length >= 2) {{
-          var contentCells = rows[1].querySelectorAll(':scope > td');
-          if (contentCells.length === 2) {{
-            var wrapper = document.createElement('div');
-            wrapper.className = 'cloze-comparison-sections';
+      var rows = Array.prototype.slice.call(table.rows || []);
+      if (rows.length < 2) {{
+        return;
+      }}
 
-            ['TLB', 'Page Table'].forEach(function(title, index) {{
-              var section = document.createElement('section');
-              section.className = 'cloze-comparison-section';
+      var headerCells = Array.prototype.slice.call(rows[0].cells || []);
+      var headers = headerCells.map(function(cell) {{
+        return (cell.textContent || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      }});
 
-              var heading = document.createElement('h4');
-              heading.className = 'cloze-comparison-heading';
-              heading.textContent = title;
-              section.appendChild(heading);
+      if (headers.length === 2 && headers[0] === 'tlb' && headers[1] === 'page table') {{
+        var contentCells = Array.prototype.slice.call(rows[1].cells || []);
+        if (contentCells.length === 2) {{
+          var wrapper = document.createElement('div');
+          wrapper.className = 'cloze-comparison-sections';
 
-              var body = document.createElement('div');
-              body.className = 'cloze-comparison-body';
-              body.innerHTML = contentCells[index].innerHTML;
-              section.appendChild(body);
-              wrapper.appendChild(section);
-            }});
+          ['TLB', 'Page Table'].forEach(function(title, index) {{
+            var section = document.createElement('section');
+            section.className = 'cloze-comparison-section';
 
-            table.parentNode.replaceChild(wrapper, table);
-          }}
+            var heading = document.createElement('h4');
+            heading.className = 'cloze-comparison-heading';
+            heading.textContent = title;
+            section.appendChild(heading);
+
+            var body = document.createElement('div');
+            body.className = 'cloze-comparison-body';
+            body.innerHTML = contentCells[index].innerHTML;
+            section.appendChild(body);
+            wrapper.appendChild(section);
+          }});
+
+          table.dataset.clozeEnhanced = '1';
+          table.parentNode.replaceChild(wrapper, table);
         }}
       }}
     }});
