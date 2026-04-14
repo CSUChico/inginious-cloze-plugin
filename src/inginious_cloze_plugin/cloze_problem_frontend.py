@@ -549,10 +549,38 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         )
 
         return """
+<style>
+  .cloze-problem .cloze-text-scroll {{
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+  }}
+
+  .cloze-problem .cloze-text {{
+    line-height: 2.2;
+    min-width: max-content;
+  }}
+
+  .cloze-problem .cloze-text table {{
+    max-width: none;
+  }}
+
+  @media (max-width: 767px) {{
+    .cloze-problem .cloze-slot-wrapper {{
+      min-width: 96px !important;
+    }}
+
+    .cloze-problem .cloze-input {{
+      min-width: 96px !important;
+    }}
+  }}
+</style>
 <div class="panel panel-default cloze-problem">
   <div class="panel-heading" id="{uniq}_title">{label}</div>
   <div class="panel-body">
-    <div class="cloze-text" id="{uniq}_text" style="line-height:2.2;">{prompt_html}</div>
+    <div class="cloze-text-scroll">
+      <div class="cloze-text" id="{uniq}_text">{prompt_html}</div>
+    </div>
     {hidden}
   </div>
 </div>
