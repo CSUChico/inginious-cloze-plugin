@@ -53,6 +53,7 @@ problems:
     type: cloze
     name: Randomized cloze
     variants_file: variants.json
+    random_problem_count: 3
 ```
 
 `variants.json` can be either a list or an object with a `variants` list:
@@ -67,6 +68,8 @@ problems:
 ```
 
 The selected variant is sent back with the submission, so the backend grades against the same problem text the student saw.
+
+When `random_problem_count` is greater than `1`, the plugin renders up to that many unique entries from the variants JSON inside the same cloze subproblem. If the JSON contains fewer entries than requested, it renders all available entries without duplication.
 
 For the dedicated `cloze` environment, keep the task's subproblems as `type: cloze` and switch the Environment tab from `mcq` to `cloze`.
 

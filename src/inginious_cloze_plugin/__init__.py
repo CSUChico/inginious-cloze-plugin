@@ -191,7 +191,7 @@ def _merge_cloze_problem_fields(target_task_data, source_task_data):
         if not isinstance(source_problem, dict):
             continue
 
-        for field in ("text", "variants_file"):
+        for field in ("text", "variants_file", "random_problem_count"):
             if not target_problem.get(field) and source_problem.get(field):
                 target_problem[field] = source_problem.get(field)
 
@@ -618,7 +618,8 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
             [
                 ["name", typeof problem.name === "string" ? problem.name : ""],
                 ["text", typeof problem.text === "string" ? problem.text : ""],
-                ["variants_file", typeof problem.variants_file === "string" ? problem.variants_file : ""]
+                ["variants_file", typeof problem.variants_file === "string" ? problem.variants_file : ""],
+                ["random_problem_count", problem.random_problem_count == null ? "" : String(problem.random_problem_count)]
             ].forEach(function (entry) {
                 var field = entry[0];
                 var value = entry[1];

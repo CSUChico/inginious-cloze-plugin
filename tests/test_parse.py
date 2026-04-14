@@ -7,8 +7,10 @@ from inginious_cloze_plugin.cloze_agent import grade_cloze_problem, parse_submis
 from inginious_cloze_plugin.__init__ import _merge_cloze_problem_fields, _parse_simple_task_yaml
 from inginious_cloze_plugin.cloze_core import (
     build_variant_record,
+    choose_variant_indices,
     grade_answers,
     load_variants_payload,
+    normalize_problem_count,
     normalize_inline_variants,
     parse_solutions_from_text,
     renumber_cloze_slots,
@@ -106,6 +108,7 @@ def test_normalize_inline_variants_decodes_json_and_sets_defaults():
     assert data["name"] == ""
     assert data["text"] == ""
     assert data["variants_file"] == ""
+    assert data["random_problem_count"] == ""
     assert data["variants"] == [{"text": "x={1:SHORTANSWER:=x}"}]
 
 
@@ -141,6 +144,72 @@ def test_build_variant_uses_submitted_variant_index():
     assert variant["index"] == 1
     assert variant["text"] == "blue={1:SHORTANSWER:=blue}"
     assert variant["slots"] == ["1"]
+
+
+def test_build_variant_combines_up_to_random_problem_count():
+    variant = build_variant(
+        {
+            "type": "cloze",
+            "random_problem_count": "5",
+            "variants": [
+                {"name": "A", "text": "A={1:SHORTANSWER:=a}"},
+                {"name": "B", "text": "B={1:SHORTANSWER:=b}"},
+            ],
+        },
+        None,
+        submitted_variant="0,1",
+    )
+
+    assert variant["selection"] == "0,1"
+    assert variant["slots"] == ["1", "2"]
+    assert "A" in variant["text"]
+    assert "B" in variant["text"]
+
+
+def test_choose_variant_indices_caps_problem_count_to_available_variants():
+    indices = choose_variant_indices(
+        [{"text": "a"}, {"text": "b"}],
+        count=5,
+        seed="demo",
+    )
+
+    assert len(indices) == 2
+    assert sorted(indices) == [0, 1]
+
+
+def test_choose_variant_indices_reuses_submitted_unique_selection():
+    indices = choose_variant_indices(
+        [{"text": "a"}, {"text": "b"}, {"text": "c"}],
+        count=2,
+        submitted_variant="2,2,1",
+    )
+
+    assert indices == [2, 1]
+
+
+def test_build_variant_record_combines_multiple_unique_variants():
+    variant = build_variant_record(
+        [
+            {"name": "One", "text": "A={1:SHORTANSWER:=a}"},
+            {"name": "Two", "text": "B={1:SHORTANSWER:=b}"},
+            {"name": "Three", "text": "C={1:SHORTANSWER:=c}"},
+        ],
+        submitted_variant="0,2",
+        problem_count=2,
+    )
+
+    assert variant["selection"] == "0,2"
+    assert variant["slots"] == ["1", "2"]
+    assert set(variant["solutions"].keys()) == {"1", "2"}
+    assert "cloze-random-problem" in variant["text"]
+    assert "One" in variant["text"]
+    assert "Three" in variant["text"]
+
+
+def test_normalize_problem_count_defaults_to_one():
+    assert normalize_problem_count("") == 1
+    assert normalize_problem_count(None) == 1
+    assert normalize_problem_count("3") == 3
 
 
 def test_renumber_cloze_slots_makes_repeated_slots_unique():

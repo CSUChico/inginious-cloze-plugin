@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import random
 import secrets
 import re
 from typing import Any
@@ -196,9 +198,18 @@ def normalize_inline_variants(problem_content: Any) -> dict[str, Any]:
     data.setdefault("name", "")
     data.setdefault("text", "")
     data.setdefault("variants_file", "")
+    data.setdefault("random_problem_count", "")
     if isinstance(data.get("variants"), str):
         data["variants"] = json.loads(data["variants"])
     return data
+
+
+def normalize_problem_count(raw_value: Any) -> int:
+    try:
+        count = int(raw_value)
+    except (TypeError, ValueError):
+        return 1
+    return max(count, 1)
 
 
 def choose_variant_index(variants: list[dict[str, Any]], seed: str | None = None,
@@ -221,12 +232,110 @@ def choose_variant_index(variants: list[dict[str, Any]], seed: str | None = None
     return int(digest[:8], 16) % len(variants)
 
 
+def parse_variant_selection(submitted_variant: Any, limit: int) -> list[int]:
+    if limit <= 0 or submitted_variant in (None, ""):
+        return []
+
+    raw_values: list[Any]
+    if isinstance(submitted_variant, list):
+        raw_values = list(submitted_variant)
+    else:
+        if isinstance(submitted_variant, str):
+            text = submitted_variant.strip()
+            if not text:
+                return []
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, list):
+                raw_values = parsed
+            elif isinstance(parsed, (int, str)):
+                raw_values = [parsed]
+            else:
+                raw_values = [part.strip() for part in text.split(",") if part.strip()]
+        else:
+            raw_values = [submitted_variant]
+
+    selection = []
+    seen = set()
+    for raw_value in raw_values:
+        try:
+            index = int(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= index < limit) or index in seen:
+            continue
+        selection.append(index)
+        seen.add(index)
+    return selection
+
+
+def choose_variant_indices(
+    variants: list[dict[str, Any]],
+    count: int,
+    seed: str | None = None,
+    submitted_variant: Any = None,
+    randomize: bool = False,
+) -> list[int]:
+    if not variants:
+        return []
+
+    normalized_count = min(normalize_problem_count(count), len(variants))
+    selected = parse_variant_selection(submitted_variant, len(variants))
+    if selected:
+        return selected[:normalized_count]
+
+    if normalized_count == 1:
+        return [choose_variant_index(variants, seed=seed, submitted_variant=submitted_variant, randomize=randomize)]
+
+    indices = list(range(len(variants)))
+    if randomize and seed in (None, ""):
+        return secrets.SystemRandom().sample(indices, normalized_count)
+
+    digest = hashlib.sha256((seed or "").encode("utf-8")).hexdigest()
+    rng = random.Random(int(digest[:16], 16))
+    rng.shuffle(indices)
+    return indices[:normalized_count]
+
+
+def _combine_variant_texts(selected_variants: list[dict[str, Any]]) -> str:
+    if len(selected_variants) <= 1:
+        return selected_variants[0]["text"] if selected_variants else ""
+
+    blocks = []
+    for variant in selected_variants:
+        parts = []
+        if variant.get("name"):
+            parts.append("<p><strong>{}</strong></p>".format(html.escape(variant["name"])))
+        parts.append(variant["text"])
+        blocks.append(
+            '<div class="cloze-random-problem" data-cloze-variant-id="{}">{}</div>'.format(
+                html.escape(str(variant.get("id", ""))),
+                "".join(parts),
+            )
+        )
+    return '<hr class="cloze-random-problem-separator">'.join(blocks)
+
+
 def build_variant_record(variants: list[dict[str, Any]], seed: str | None = None,
-                         submitted_variant: Any = None, randomize: bool = False) -> dict[str, Any]:
-    index = choose_variant_index(variants, seed=seed, submitted_variant=submitted_variant, randomize=randomize)
-    variant = dict(variants[index])
-    variant["text"] = renumber_cloze_slots(variant["text"])
-    variant["index"] = index
+                         submitted_variant: Any = None, randomize: bool = False,
+                         problem_count: int = 1) -> dict[str, Any]:
+    selection = choose_variant_indices(
+        variants,
+        count=problem_count,
+        seed=seed,
+        submitted_variant=submitted_variant,
+        randomize=randomize,
+    )
+    if not selection:
+        selection = [0]
+
+    selected_variants = [dict(variants[index]) for index in selection]
+    variant = dict(selected_variants[0])
+    variant["text"] = renumber_cloze_slots(_combine_variant_texts(selected_variants))
+    variant["index"] = selection[0] if len(selection) == 1 else ",".join(str(index) for index in selection)
+    variant["selection"] = variant["index"]
     variant["slots"] = expected_slots_from_text(variant["text"])
     variant["solutions"] = parse_solutions_from_text(variant["text"])
     return variant

@@ -26,6 +26,7 @@ from .cloze_core import (
     expected_slots_from_text,
     grade_answers,
     load_variants_payload,
+    normalize_problem_count,
     normalize_inline_variants,
     parse_solutions_from_text,
 )
@@ -169,11 +170,13 @@ def select_variant_index(problem_content: Any, task_fs: Any = None, seed: str | 
 def build_variant(problem_content: Any, task_fs: Any = None, seed: str | None = None,
                   submitted_variant: Any = None) -> dict[str, Any]:
     variants = load_variants(problem_content, task_fs)
+    data = coerce_problem_mapping(problem_content)
     return build_variant_record(
         variants,
         seed=seed,
         submitted_variant=submitted_variant,
         randomize=(submitted_variant in (None, "") and seed is None),
+        problem_count=normalize_problem_count(data.get("random_problem_count")),
     )
 
 

@@ -66,6 +66,14 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     <p class="help-block">Optional task file containing a JSON variants list for randomized prompts.</p>
   </div>
 </div>
+<div class="form-group row">
+  <label for="random_problem_count-PID" class="col-sm-2 control-label">Random problems</label>
+  <div class="col-sm-10">
+    <input type="number" min="1" step="1" class="form-control" id="random_problem_count-PID"
+           name="problem[PID][random_problem_count]" placeholder="1" />
+    <p class="help-block">When using a variants JSON file, randomly render up to this many unique entries in this subproblem.</p>
+  </div>
+</div>
 """
 
     def __init__(self, problemid, problem_content, translations, taskfs):
@@ -130,18 +138,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             default_variant = build_variant(fallback_data, self._task_fs, seed=None)
         uniq = "cloze_{}_{}".format(pid, uuid4().hex)
 
-        variant_payload = json.dumps([
-            {
-                "index": variant_record["index"],
-                "name": variant_record.get("name"),
-                "text": variant_record.get("text", ""),
-                "slots": variant_record.get("slots", []),
-            }
-            for variant_record in [
-                build_variant(dict(self._data, variants=variants), self._task_fs, submitted_variant=index)
-                for index in range(len(variants))
-            ]
-        ])
+        variant_payload = json.dumps(variants)
 
         prompt_html = self._render_prompt_with_inputs(default_variant["text"], uniq)
         if load_error:
@@ -159,7 +156,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         hidden = '<input type="hidden" name="{name}" id="{element_id}" value="{value}">'.format(
             name=html.escape(pid),
             element_id=html.escape("{}_json".format(uniq)),
-            value=html.escape(json.dumps({"__variant": default_variant["index"]})),
+            value=html.escape(json.dumps({"__variant": default_variant["selection"]})),
         )
 
         script = """
@@ -171,6 +168,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   if (!hidden) return;
 
   var variants = {variants_json};
+  var problemCount = {problem_count};
   var tokenRe = /\\{{(\\d+):(SHORTANSWER|NUMERICAL|MULTICHOICE):((?:\\\\.|[^}}])*)\\}}/g;
   var textRoot = document.getElementById("{uniq}_text");
   var titleRoot = document.getElementById("{uniq}_title");
@@ -184,6 +182,100 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }}
+
+  function normalizeProblemCount(value) {{
+    var parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 1) {{
+      return 1;
+    }}
+    return Math.max(1, Math.floor(parsed));
+  }}
+
+  function parseSelection(selection) {{
+    var values = [];
+    if (Array.isArray(selection)) {{
+      values = selection;
+    }} else if (selection !== null && selection !== undefined) {{
+      if (typeof selection === "string") {{
+        var trimmed = selection.trim();
+        if (!trimmed) {{
+          values = [];
+        }} else {{
+          try {{
+            var parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {{
+              values = parsed;
+            }} else {{
+              values = trimmed.split(",");
+            }}
+          }} catch (err) {{
+            values = trimmed.split(",");
+          }}
+        }}
+      }} else {{
+        values = [selection];
+      }}
+    }}
+
+    var unique = [];
+    var seen = {{}};
+    values.forEach(function(value) {{
+      var index = Number(value);
+      if (!Number.isInteger(index) || index < 0 || index >= variants.length || seen[index]) {{
+        return;
+      }}
+      seen[index] = true;
+      unique.push(index);
+    }});
+    return unique;
+  }}
+
+  function selectionToken(selection) {{
+    return selection.length === 1 ? String(selection[0]) : selection.join(",");
+  }}
+
+  function renumberSlots(text) {{
+    var nextSlot = 0;
+    tokenRe.lastIndex = 0;
+    return String(text || "").replace(tokenRe, function (_, __, kind, rhs) {{
+      nextSlot += 1;
+      return '{{' + nextSlot + ':' + kind + ':' + rhs + '}}';
+    }});
+  }}
+
+  function composeVariant(selection) {{
+    var count = Math.min(normalizeProblemCount(problemCount), Math.max(variants.length, 1));
+    var indices = parseSelection(selection).slice(0, count);
+    if (!indices.length && variants.length) {{
+      indices = [0];
+    }}
+
+    var chosen = indices.map(function(index) {{
+      return variants[index];
+    }}).filter(Boolean);
+
+    var combinedText = chosen.map(function(variant, idx) {{
+      var parts = [];
+      if (chosen.length > 1 && variant.name) {{
+        parts.push('<p><strong>' + escapeHtml(variant.name) + '</strong></p>');
+      }}
+      parts.push(variant.text || '');
+      return '<div class="cloze-random-problem" data-cloze-variant-id="' +
+        escapeHtml(String(variant.id == null ? indices[idx] : variant.id)) + '">' +
+        parts.join('') +
+        '</div>';
+    }}).join('<hr class="cloze-random-problem-separator">');
+
+    if (chosen.length === 1) {{
+      combinedText = chosen[0].text || "";
+    }}
+
+    return {{
+      index: selectionToken(indices),
+      name: chosen.length === 1 ? chosen[0].name : null,
+      text: renumberSlots(combinedText)
+    }};
   }}
 
   function renderMultichoice(slot, rhs) {{
@@ -306,7 +398,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   }}
 
   function renderVariant(index, current) {{
-    var variant = variants[index] || variants[0];
+    var variant = composeVariant(index);
     if (!variant || !textRoot) return;
 
     if (!current) {{
@@ -402,10 +494,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
         parsedState = JSON.parse(parsedState);
       }}
       if (parsedState && parsedState["{pid}"] && parsedState["{pid}"].variant !== undefined) {{
-        var stateVariant = Number(parsedState["{pid}"].variant);
-        if (!Number.isNaN(stateVariant) && stateVariant >= 0 && stateVariant < variants.length) {{
-          return stateVariant;
-        }}
+        return parsedState["{pid}"].variant;
       }}
     }} catch (err) {{
       return null;
@@ -415,11 +504,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
   function setAnswers(rawValue) {{
     var current = normalizeAnswers(rawValue);
-    var variantIndex = Number(current.__variant);
-    if (Number.isNaN(variantIndex)) {{
+    var variantIndex = current.__variant;
+    if (variantIndex === undefined || variantIndex === null || variantIndex === "") {{
       variantIndex = getVariantFromState();
     }}
-    if (variantIndex === null || Number.isNaN(variantIndex)) {{
+    if (variantIndex === undefined || variantIndex === null || variantIndex === "") {{
       variantIndex = {default_index};
     }}
     renderVariant(variantIndex, current);
@@ -457,7 +546,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   }}
 
   var variantIndex = {default_index};
-  if (window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0) {{
+  if (normalizeProblemCount(problemCount) <= 1 && window.input && Array.isArray(window.input['@random']) && window.input['@random'].length > 0) {{
     var numeric = Number(window.input['@random'][0]);
     if (!Number.isNaN(numeric) && variants.length > 0) {{
       variantIndex = Math.floor(Math.abs(numeric) * variants.length) % variants.length;
@@ -491,7 +580,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             uniq=uniq,
             pid=pid,
             variants_json=variant_payload,
-            default_index=default_variant["index"],
+            default_index=json.dumps(default_variant["selection"]),
+            problem_count=json.dumps(self._data.get("random_problem_count", "")),
         )
 
         return """
