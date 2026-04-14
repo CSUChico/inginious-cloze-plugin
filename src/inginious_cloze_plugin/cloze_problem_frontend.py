@@ -69,7 +69,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 <div class="form-group row">
   <label for="random_problem_count-PID" class="col-sm-2 control-label">Random problems</label>
   <div class="col-sm-10">
-    <input type="number" min="1" step="1" class="form-control" id="random_problem_count-PID"
+    <input type="text" inputmode="numeric" pattern="[0-9]*" class="form-control" id="random_problem_count-PID"
            name="problem[PID][random_problem_count]" placeholder="1" />
     <p class="help-block">When using a variants JSON file, randomly render up to this many unique entries in this subproblem.</p>
   </div>
