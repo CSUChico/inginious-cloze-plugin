@@ -272,7 +272,7 @@ def _patch_task_editor_get_auth():
             task_data=task_data,
             environment_types=environment_types,
             environments=environments,
-            problemdata=json.dumps(task_data.get('problems', {})),
+            problemdata=task_data.get('problems', {}),
             contains_is_html=self.contains_is_html(task_data),
             current_filetype=current_filetype,
             available_filetypes=available_filetypes,
@@ -566,105 +566,10 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
         return problems;
     }
 
-    function getCurrentProblemIds() {
-        var ids = {};
-
-        document.querySelectorAll("[name]").forEach(function (node) {
-            var match = node.name.match(/^problem\\[([^\\]]+)\\]\\[/);
-            if (match) {
-                ids[match[1]] = true;
-            }
-        });
-
-        document.querySelectorAll("[id]").forEach(function (node) {
-            var text = (node.textContent || "").trim();
-            var match = text.match(/^Problem id:\\s*(.+)$/);
-            if (match) {
-                ids[match[1]] = true;
-            }
-        });
-
-        return ids;
-    }
-
-    function findAddControls() {
-        var idInput = document.querySelector('input[placeholder="new-problem-id"]');
-        if (!idInput) {
-            return null;
-        }
-
-        var container = idInput.closest(".row, .form-group, .well, .panel-body") || document;
-        var typeSelect = container.querySelector("select");
-        var addButton = Array.prototype.find.call(
-            container.querySelectorAll("button, input[type=button], input[type=submit], a.btn"),
-            function (node) {
-                return /add/i.test((node.textContent || node.value || "").trim());
-            }
-        );
-
-        if (!typeSelect || !addButton) {
-            return null;
-        }
-
-        return {
-            idInput: idInput,
-            typeSelect: typeSelect,
-            addButton: addButton
-        };
-    }
-
-    function trigger(node, eventName) {
-        node.dispatchEvent(new Event(eventName, { bubbles: true }));
-    }
-
-    function addMissingProblem(pid, controls) {
-        controls.idInput.value = pid;
-        trigger(controls.idInput, "input");
-        trigger(controls.idInput, "change");
-
-        controls.typeSelect.value = "cloze";
-        trigger(controls.typeSelect, "input");
-        trigger(controls.typeSelect, "change");
-
-        if (typeof controls.addButton.click === "function") {
-            controls.addButton.click();
-        } else {
-            trigger(controls.addButton, "click");
-        }
-    }
-
-    function ensureProblemsExist(problems) {
-        var controls = findAddControls();
-        var currentIds = getCurrentProblemIds();
-        var missing = Object.keys(problems).filter(function (pid) {
-            return !currentIds[pid];
-        });
-
-        if (!missing.length) {
-            return true;
-        }
-
-        if (!controls) {
-            return false;
-        }
-
-        missing.forEach(function (pid, index) {
-            window.setTimeout(function () {
-                addMissingProblem(pid, controls);
-            }, index * 75);
-        });
-
-        return false;
-    }
-
     function hydrate() {
         var problems = getClozeProblems();
         if (!Object.keys(problems).length) {
             return true;
-        }
-
-        if (!ensureProblemsExist(problems)) {
-            return false;
         }
 
         var foundAll = true;
