@@ -566,10 +566,49 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
         return problems;
     }
 
+    function hasProblemCard(pid) {
+        return document.querySelector('[name="problem[' + pid + '][text]"]') !== null;
+    }
+
+    function ensureProblemsExist(problems, count) {
+        if (typeof window.studio_create_from_template !== "function") {
+            return false;
+        }
+
+        // Give the native editor a chance to instantiate existing problems first.
+        if (count < 5 && !Object.keys(problems).some(hasProblemCard)) {
+            return false;
+        }
+
+        var missing = Object.keys(problems).filter(function (pid) {
+            return !hasProblemCard(pid);
+        });
+
+        if (!missing.length) {
+            return true;
+        }
+
+        missing.forEach(function (pid) {
+            if (hasProblemCard(pid)) {
+                return;
+            }
+            window.studio_create_from_template("#subproblem_cloze", pid);
+        });
+
+        return Object.keys(problems).every(function (pid) {
+            return hasProblemCard(pid);
+        });
+    }
+
     function hydrate() {
         var problems = getClozeProblems();
+        var attemptCount = arguments.length > 0 ? arguments[0] : 0;
         if (!Object.keys(problems).length) {
             return true;
+        }
+
+        if (!ensureProblemsExist(problems, attemptCount)) {
+            return false;
         }
 
         var foundAll = true;
@@ -595,8 +634,14 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
         return foundAll;
     }
 
+    function scheduleHydrateSoon() {
+        window.setTimeout(function () {
+            hydrate(40);
+        }, 0);
+    }
+
     function attempt(count) {
-        if (hydrate() || count >= 40) {
+        if (hydrate(count) || count >= 40) {
             return;
         }
         window.setTimeout(function () {
@@ -604,11 +649,38 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
         }, 100);
     }
 
+    function installObserver() {
+        if (typeof MutationObserver !== "function") {
+            return;
+        }
+
+        var root = document.getElementById("tab_subproblems") || document.body;
+        if (!root) {
+            return;
+        }
+
+        var observer = new MutationObserver(function (mutations) {
+            var shouldHydrate = mutations.some(function (mutation) {
+                return mutation.addedNodes && mutation.addedNodes.length > 0;
+            });
+            if (shouldHydrate) {
+                scheduleHydrateSoon();
+            }
+        });
+
+        observer.observe(root, {
+            childList: true,
+            subtree: true
+        });
+    }
+
     if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", function () {
+            installObserver();
             attempt(0);
         });
     } else {
+        installObserver();
         attempt(0);
     }
 })();
