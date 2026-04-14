@@ -98,9 +98,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
             label_text = "Blank {}".format(slot)
             parts.append(
                 '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">'
-                '<label class="sr-only" for="{element_id}">{label_text}</label>'
                 '<input type="{input_type}" class="form-control cloze-input" '
-                'data-slot="{slot}" id="{element_id}"{step_attr} '
+                'data-slot="{slot}" id="{element_id}" aria-label="{label_text}"{step_attr} '
                 'style="display:block; width:100%; min-width:140px; vertical-align:middle;">'
                 '<span class="cloze-slot-feedback text-muted" data-slot-feedback="{slot}" aria-live="polite" '
                 'style="display:block; font-size:0.85em; margin-top:4px;"></span>'
@@ -202,8 +201,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     var labelText = 'Blank ' + slot;
     var html = '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">';
-    html += '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>';
     html += '<select class="form-control cloze-input" data-slot="' + slot + '" id="{uniq}_slot_' + slot + '"' +
+      ' aria-label="' + escapeHtml(labelText) + '"' +
       ' style="display:block; width:100%; min-width:140px; vertical-align:middle;">';
     html += '<option value=""></option>';
     options.forEach(function (option) {{
@@ -329,9 +328,8 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
       var stepAttr = inputType === "number" ? ' step="any"' : "";
       var labelText = 'Blank ' + slot;
       return '<span class="cloze-slot-wrapper" style="display:inline-block; min-width:140px; vertical-align:middle; margin:0 4px;">' +
-        '<label class="sr-only" for="{uniq}_slot_' + slot + '">' + escapeHtml(labelText) + '</label>' +
         '<input type="' + inputType + '" class="form-control cloze-input" data-slot="' + slot + '"' +
-        ' id="{uniq}_slot_' + slot + '"' + stepAttr +
+        ' id="{uniq}_slot_' + slot + '" aria-label="' + escapeHtml(labelText) + '"' + stepAttr +
         ' style="display:block; width:100%; min-width:140px; vertical-align:middle;">' +
         '<span class="cloze-slot-feedback text-muted" data-slot-feedback="' + escapeHtml(slot) + '" aria-live="polite" style="display:block; font-size:0.85em; margin-top:4px;"></span>' +
         '</span>';
