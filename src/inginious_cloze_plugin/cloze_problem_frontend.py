@@ -376,6 +376,57 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     return null;
   }}
 
+  function enhanceConvertedTables() {{
+    if (!textRoot) {{
+      return;
+    }}
+
+    var comparisonTables = textRoot.querySelectorAll('.cloze-converted-table');
+    comparisonTables.forEach(function(table) {{
+      var headers = Array.prototype.slice.call(table.querySelectorAll(':scope > tbody > tr:first-child > th, :scope > tr:first-child > th'))
+        .map(function(node) {{ return (node.textContent || '').replace(/\\s+/g, ' ').trim(); }});
+
+      if (headers.length === 2 && headers[0] === 'TLB' && headers[1] === 'Page Table' && !table.dataset.clozeEnhanced) {{
+        var rows = table.querySelectorAll(':scope > tbody > tr, :scope > tr');
+        if (rows.length >= 2) {{
+          var contentCells = rows[1].querySelectorAll(':scope > td');
+          if (contentCells.length === 2) {{
+            var wrapper = document.createElement('div');
+            wrapper.className = 'cloze-comparison-sections';
+
+            ['TLB', 'Page Table'].forEach(function(title, index) {{
+              var section = document.createElement('section');
+              section.className = 'cloze-comparison-section';
+
+              var heading = document.createElement('h4');
+              heading.className = 'cloze-comparison-heading';
+              heading.textContent = title;
+              section.appendChild(heading);
+
+              var body = document.createElement('div');
+              body.className = 'cloze-comparison-body';
+              body.innerHTML = contentCells[index].innerHTML;
+              section.appendChild(body);
+              wrapper.appendChild(section);
+            }});
+
+            table.parentNode.replaceChild(wrapper, table);
+          }}
+        }}
+      }}
+    }});
+
+    textRoot.querySelectorAll('.cloze-converted-table').forEach(function(table) {{
+      var text = (table.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (table.querySelector('.cloze-input')) {{
+        table.classList.add('cloze-answer-table');
+      }}
+      if (/Tag=|PPN=|VPN|Way #|Set #|Page Table|TLB|Data =/.test(text)) {{
+        table.classList.add('cloze-data-table');
+      }}
+    }});
+  }}
+
   function collect() {{
     var current = {{}};
     try {{
@@ -438,6 +489,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     hidden.value = JSON.stringify(current);
     lastHiddenValue = hidden.value;
+    enhanceConvertedTables();
     clearInlineFeedback();
     if (lastInlineFeedback) {{
       renderInlineFeedback(lastInlineFeedback);
@@ -627,6 +679,11 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
   }}
 
+  .cloze-problem .cloze-text .cloze-data-table {{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 14px;
+  }}
+
   .cloze-problem .cloze-text .cloze-converted-table td,
   .cloze-problem .cloze-text .cloze-converted-table th {{
     padding: 10px 12px;
@@ -653,6 +710,17 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     box-shadow: none;
   }}
 
+  .cloze-problem .cloze-text .cloze-answer-table {{
+    font-family: inherit;
+  }}
+
+  .cloze-problem .cloze-text .cloze-answer-table td:first-child {{
+    font-weight: 600;
+    white-space: normal;
+    min-width: 220px;
+    background: #fbfcfe;
+  }}
+
   .cloze-problem .cloze-text .cloze-converted-table .cloze-input {{
     min-width: 88px;
   }}
@@ -669,6 +737,28 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
   .cloze-problem .cloze-text .cloze-converted-break {{
     display: block;
     height: 12px;
+  }}
+
+  .cloze-problem .cloze-text .cloze-comparison-sections {{
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin: 20px 0 24px;
+  }}
+
+  .cloze-problem .cloze-text .cloze-comparison-section {{
+    display: block;
+  }}
+
+  .cloze-problem .cloze-text .cloze-comparison-heading {{
+    margin: 0 0 10px;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.3;
+  }}
+
+  .cloze-problem .cloze-text .cloze-comparison-body {{
+    display: block;
   }}
 
   .cloze-problem .cloze-random-problem {{
