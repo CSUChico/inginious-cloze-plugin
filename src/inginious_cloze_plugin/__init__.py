@@ -600,7 +600,7 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
                 return;
             }
             pidInput.value = pid;
-            typeInput.value = "problem_cloze";
+            typeInput.value = "subproblem_cloze";
             window.studio_create_new_subproblem();
         });
 
