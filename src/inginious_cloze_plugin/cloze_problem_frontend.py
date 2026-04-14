@@ -132,12 +132,15 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
         variant_payload = json.dumps([
             {
-                "index": index,
-                "name": item.get("name"),
-                "text": item.get("text", ""),
-                "slots": expected_slots_from_text(item.get("text", "")),
+                "index": variant_record["index"],
+                "name": variant_record.get("name"),
+                "text": variant_record.get("text", ""),
+                "slots": variant_record.get("slots", []),
             }
-            for index, item in enumerate(variants)
+            for variant_record in [
+                build_variant(dict(self._data, variants=variants), self._task_fs, submitted_variant=index)
+                for index in range(len(variants))
+            ]
         ])
 
         prompt_html = self._render_prompt_with_inputs(default_variant["text"], uniq)
