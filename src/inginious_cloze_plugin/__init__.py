@@ -272,7 +272,7 @@ def _patch_task_editor_get_auth():
             task_data=task_data,
             environment_types=environment_types,
             environments=environments,
-            problemdata=task_data.get('problems', {}),
+            problemdata=json.dumps(task_data.get('problems', {})),
             contains_is_html=self.contains_is_html(task_data),
             current_filetype=current_filetype,
             available_filetypes=available_filetypes,
