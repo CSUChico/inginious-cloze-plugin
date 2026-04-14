@@ -601,6 +601,30 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
     max-width: none;
   }}
 
+  .cloze-problem .cloze-random-problem {{
+    display: block;
+    width: 100%;
+    clear: both;
+    margin: 0 0 24px;
+  }}
+
+  .cloze-problem .cloze-random-problem > *:first-child {{
+    margin-top: 0;
+  }}
+
+  .cloze-problem .cloze-random-problem > *:last-child {{
+    margin-bottom: 0;
+  }}
+
+  .cloze-problem .cloze-random-problem-separator {{
+    display: block;
+    width: 100%;
+    clear: both;
+    border: 0;
+    border-top: 1px solid #ddd;
+    margin: 20px 0 24px;
+  }}
+
   @media (max-width: 767px) {{
     .cloze-problem .cloze-slot-wrapper {{
       min-width: 96px !important;
