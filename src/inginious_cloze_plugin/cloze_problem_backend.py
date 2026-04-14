@@ -188,7 +188,7 @@ class ClozeProblem(Problem):
 
     @classmethod
     def get_text_fields(cls):
-        return {"name": True, "text": True, "variants_file": True}
+        return {"text": True}
 
     def __init__(self, problemid, problem_content, translations, taskfs):
         super().__init__(problemid, problem_content, translations, taskfs)

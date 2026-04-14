@@ -29,7 +29,7 @@ class DisplayableClozeProblem(ClozeProblem, DisplayableProblem):
 
     @classmethod
     def get_text_fields(cls):
-        return {"name": True, "text": True, "variants_file": True}
+        return {"text": True}
 
     def show_editbox_templates(self, template_helper, language):
         return {
