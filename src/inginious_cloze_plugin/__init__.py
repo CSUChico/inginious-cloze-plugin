@@ -566,10 +566,57 @@ def _inject_task_editor_cloze_hydrator(source_task_data=None):
         return problems;
     }
 
+    function hasProblemCard(pid) {
+        if (typeof window.studio_get_problem === "function") {
+            return document.querySelector(window.studio_get_problem(pid)) !== null;
+        }
+        return document.querySelector('[name="problem[' + pid + '][type]"]') !== null;
+    }
+
+    function ensureProblemsExist(problems) {
+        if (
+            typeof window.studio_create_new_subproblem !== "function" ||
+            typeof window.studio_get_problem !== "function"
+        ) {
+            return false;
+        }
+
+        var pidInput = document.getElementById("new_subproblem_pid");
+        var typeInput = document.getElementById("new_subproblem_type");
+        if (!pidInput || !typeInput) {
+            return false;
+        }
+
+        var missing = Object.keys(problems).filter(function (pid) {
+            return !hasProblemCard(pid);
+        });
+
+        if (!missing.length) {
+            return true;
+        }
+
+        missing.forEach(function (pid) {
+            if (hasProblemCard(pid)) {
+                return;
+            }
+            pidInput.value = pid;
+            typeInput.value = "problem_cloze";
+            window.studio_create_new_subproblem();
+        });
+
+        return Object.keys(problems).every(function (pid) {
+            return hasProblemCard(pid);
+        });
+    }
+
     function hydrate() {
         var problems = getClozeProblems();
         if (!Object.keys(problems).length) {
             return true;
+        }
+
+        if (!ensureProblemsExist(problems)) {
+            return false;
         }
 
         var foundAll = true;
