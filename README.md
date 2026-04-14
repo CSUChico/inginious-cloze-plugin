@@ -73,40 +73,6 @@ When `random_problem_count` is greater than `1`, the plugin renders up to that m
 
 For the dedicated `cloze` environment, keep the task's subproblems as `type: cloze` and switch the Environment tab from `mcq` to `cloze`.
 
-## Matching-question generator
-
-For left/right matching layouts, you can generate a `variants.json` file from a simpler spec:
-
-```bash
-python3 scripts/generate_matching_variants.py examples/matching_spec.json -o cloze_variants.json
-```
-
-The generator:
-- builds an HTML two-column layout
-- turns each left-side item into a cloze `MULTICHOICE` blank
-- shuffles the right-side choices per variant when requested
-
-Input spec shape:
-
-```json
-{
-  "title": "Optional heading",
-  "intro": ["Paragraph 1", "Paragraph 2"],
-  "instructions": "Match each description on the left with a line of code on the right.",
-  "variants": 4,
-  "shuffle_left": false,
-  "shuffle_right": true,
-  "left_items": [
-    { "text": "x > 0", "answer_id": "e" }
-  ],
-  "right_items": [
-    { "id": "e", "text": "((x >> W) & 0x1) | !x" }
-  ]
-}
-```
-
-Use the generated file as your cloze subproblem's `variants_file`.
-
 ## Development
 
 The `src/inginious_cloze_plugin` directory holds:
